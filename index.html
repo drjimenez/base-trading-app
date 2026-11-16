@@ -119,6 +119,27 @@
   .tabla-scroll .tabla td,.tabla-scroll .tabla th{white-space:nowrap;padding:6px 8px}
   .pensando::after{content:"";display:inline-block;width:1em;animation:puntos 1.2s steps(4) infinite}
   @keyframes puntos{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+  /* ---- Reportes estilo Edgeful ---- */
+  .ajustes summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+  .ajustes summary::-webkit-details-marker{display:none}
+  .ajustes[open] summary{margin-bottom:6px}
+  .et{display:block;color:var(--mut);font-size:12px;margin:10px 2px 4px}
+  .fila-aj{display:flex;gap:8px;align-items:center}
+  .fila-aj select,.fila-aj input{margin:0;flex:1}
+  .fila-aj .btn-ic{height:44px;min-width:44px;font-size:17px}
+  .ajustes select{margin-bottom:0}
+  .enjuego-rep{border-color:var(--acc)}
+  .ej-fila{display:flex;align-items:center;gap:10px;margin:6px 0}
+  .ej-fila>div:first-child{flex:1}
+  .ej-pct{font-size:40px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+  .tag.up{color:var(--up);background:rgba(34,197,94,.15)} .tag.down{color:var(--down);background:rgba(239,68,68,.15)}
+  .apiladas{display:flex;gap:10px;align-items:flex-end;padding-top:4px}
+  .ap{flex:1;display:flex;flex-direction:column;align-items:stretch;min-width:0}
+  .ap-col{height:170px;display:flex;flex-direction:column;border-radius:10px;overflow:hidden}
+  .ap-col i{display:flex;align-items:center;justify-content:center;font-style:normal;font-size:12px;font-weight:600;min-height:0;overflow:hidden}
+  .ap-col i.no{background:var(--panel2);color:var(--mut)} .ap-col i.si{background:var(--acc);color:#04101f}
+  .ap-col i span{white-space:nowrap}
+  .ap-lbl{font-size:11px;color:var(--mut);text-align:center;margin-top:6px;line-height:1.25}
   select{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:16px;margin-bottom:10px;-webkit-appearance:none}
 </style>
 </head>
@@ -389,7 +410,16 @@ async function cargarIntradia(sim) {
 // ===================== EN JUEGO (estilo "what's in play") =====================
 const REP_DE_SETUP = { "Gap al alza": "gap_fill", "Gap a la baja": "gap_fill", "Rompió el máximo de ayer": "rango_previo",
   "Rompió el mínimo de ayer": "rango_previo", "Día interior": "dia_interior", "Próxima sesión": "rango_previo" };
-let enJuegoFiltro = "todos";
+// sesgo de cada setup: el gap al alza se "llena" bajando (corto), el gap a la baja subiendo (largo)
+function sesgoDe(f) {
+  const t = `${f.setup} ${f.evento}`.toLowerCase();
+  if (f.setup === "Gap al alza") return "corto";
+  if (f.setup === "Gap a la baja") return "largo";
+  if (/(máximo|arriba|alza|sube|verde)/.test(t) && !/(mínimo|abajo|baja|rojo)/.test(t)) return "largo";
+  if (/(mínimo|abajo|baja|rojo)/.test(t) && !/(máximo|arriba|alza|sube|verde)/.test(t)) return "corto";
+  return "neutral";
+}
+let enJuegoFiltro = "todos", enJuegoMin = 0, enJuegoSesgo = "todos";
 async function verEnJuego() {
   $("#titulo").textContent = "En juego";
   const c = $("#contenido");
@@ -403,89 +433,271 @@ async function verEnJuego() {
     const tipos = [...new Set(filas.map((f) => f.tipo))];
     const chips = ["todos", ...tipos].map((t) => `<button class="chip ${enJuegoFiltro === t ? "on" : ""}" data-f="${t}">${t === "todos" ? "Todos" : TIPOS[t] || t}</button>`).join("");
     const porActivo = {};
-    filas.filter((f) => enJuegoFiltro === "todos" || f.tipo === enJuegoFiltro).forEach((f) => (porActivo[f.simbolo] ??= []).push(f));
+    const visibles = filas.filter((f) => (enJuegoFiltro === "todos" || f.tipo === enJuegoFiltro)
+      && (f.prob ?? 0) >= enJuegoMin && (enJuegoSesgo === "todos" || sesgoDe(f) === enJuegoSesgo));
+    visibles.sort((a, b) => (b.prob ?? 0) - (a.prob ?? 0)).forEach((f) => (porActivo[f.simbolo] ??= []).push(f));
     const tarjetas = Object.entries(porActivo).map(([sim, fs]) => {
       const a = estado.activos.find((x) => x.simbolo === sim) || {};
       return `<div class="card">
         <div style="display:flex;align-items:baseline;gap:8px"><b style="font-size:17px">${esc(nombreCorto(sim))}</b>
           <span class="mut" style="font-size:12px">${esc(fs[0].fecha)}</span>
           <span class="der px">${fmtPx(sim, a.cierre)} <span class="${clase(a.var_1d)}" style="font-size:13px">${fmtPct(a.var_1d)}</span></span></div>
-        ${fs.map((f) => `<div class="setup" data-s="${esc(sim)}" data-r="${REP_DE_SETUP[f.setup] || "rango_previo"}">
-          <div><b>${esc(f.setup)}</b><div class="nota">${esc(f.detalle)}</div></div>
+        ${fs.map((f) => { const s = sesgoDe(f); return `<div class="setup" data-s="${esc(sim)}" data-r="${REP_DE_SETUP[f.setup] || "rango_previo"}">
+          <div><b>${esc(f.setup)}</b> <span class="tag ${s === "largo" ? "up" : s === "corto" ? "down" : ""}">${s === "neutral" ? "neutral" : s}</span><div class="nota">${esc(f.detalle)}</div></div>
           <div class="pct ${f.prob >= 50 ? "up" : "down"}">${f.prob == null ? "—" : Number(f.prob).toFixed(0) + "%"}</div>
           <div class="barra" style="grid-column:1/-1"><i style="width:${f.prob || 0}%"></i></div>
-          <div class="nota" style="grid-column:1/-1">${esc(f.evento)} · ${f.muestras} casos (2 años)</div></div>`).join("")}
+          <div class="nota" style="grid-column:1/-1">${esc(f.evento)} · ${f.muestras} casos (2 años)</div></div>`; }).join("")}
       </div>`;
     }).join("");
-    c.innerHTML = `<div class="chips">${chips}</div>${tarjetas || '<div class="vacio">Sin configuraciones.</div>'}
-      <p class="nota">Patrones formados en la última vela diaria de cada activo y con qué frecuencia se cumplió el evento en los últimos 2 años. Toca uno para ver el reporte completo.</p>`;
+    c.innerHTML = `<div class="chips">${chips}</div>
+      <div class="card" style="padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:10px"><span class="nota" style="flex:none">Probabilidad mínima</span>
+          <input id="rng-min" type="range" min="0" max="90" step="5" value="${enJuegoMin}" style="flex:1;margin:0;padding:0;background:none;border:0">
+          <b style="width:44px;text-align:right">${enJuegoMin}%</b></div>
+        <div class="seg" style="margin:8px 0 0">${[["todos", "Todos"], ["largo", "Largo"], ["corto", "Corto"]].map(([k, t]) =>
+          `<button data-sg="${k}" class="${enJuegoSesgo === k ? "on" : ""}">${t}</button>`).join("")}</div></div>
+      ${tarjetas || '<div class="vacio">Ningún patrón cumple los filtros.</div>'}
+      <p class="nota">Patrones formados en la última vela diaria de cada activo, ordenados de mayor a menor probabilidad histórica (2 años). Toca uno para ver el reporte completo.</p>`;
     c.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => { enJuegoFiltro = b.dataset.f; pinta(); }));
+    c.querySelectorAll("[data-sg]").forEach((b) => b.addEventListener("click", () => { enJuegoSesgo = b.dataset.sg; pinta(); }));
+    $("#rng-min").addEventListener("change", (e) => { enJuegoMin = Number(e.target.value); pinta(); });
+    $("#rng-min").addEventListener("input", (e) => { e.target.nextElementSibling.textContent = e.target.value + "%"; });
     c.querySelectorAll(".setup").forEach((el) => el.addEventListener("click", () => {
-      estado.rep = { ...estado.rep, simbolo: el.dataset.s, reporte: el.dataset.r };
+      estado.rep = { ...estado.rep, simbolo: el.dataset.s, reporte: el.dataset.r, sub: "estandar" };
       irTab("reportes");
     }));
   };
   pinta();
 }
 
-// ===================== REPORTES =====================
-const REPORTES = [
-  ["gap_fill", "Gap fill"], ["rango_previo", "Rango del día previo"], ["dia_interior", "Día interior"],
-  ["apertura_fuera", "Apertura fuera del rango"], ["alto_bajo_semana", "Máx./mín. semanal por día"], ["rango_diario", "Rango diario (ADR)"],
-  ["balance_inicial", "Balance inicial (IB)"]];
+// ===================== REPORTES (estructura tipo Edgeful) =====================
+// Ajustes (plantilla, reporte, sub-reporte, activo, periodo) → En juego del reporte → gráfico → tabla de resultados
+// → sub-reportes → tabla de días filtrable → explicación.
+const GRUPOS_REP = [
+  ["Precio diario", [["gap_fill", "Gap fill"], ["rango_previo", "Rango del día previo"], ["dia_interior", "Día interior"],
+    ["apertura_fuera", "Apertura fuera del rango"], ["alto_bajo_semana", "Máx./mín. semanal por día"], ["rango_diario", "Rango diario (ADR)"],
+    ["envolventes", "Velas envolventes por R:R"]]],
+  ["Sesión / intradía", [["vela_apertura", "Vela de apertura (continuación)"], ["balance_inicial", "Balance inicial (IB): proyección"],
+    ["ib_ruptura", "IB: tipo de ruptura y cierre"], ["rango_previo_sesion", "Rango de la sesión previa"], ["gap_sesion", "Gap de sesión y % de llenado"],
+    ["pivotes", "Puntos pivote"], ["power_hour", "Power hour"]]],
+  ["Mercados 24 h", [["sesiones", "Sesiones Asia / Londres / NY"], ["medianoche", "Apertura de medianoche (ICT)"], ["apertura_semanal", "Apertura semanal"]]],
+  ["Herramientas", [["calc_riesgo", "Calculadora de riesgo"]]],
+];
+const REPORTES = GRUPOS_REP.flatMap(([, rs]) => rs);
+const nombreRep = (k) => (REPORTES.find(([x]) => x === k) || [k, k])[1];
 const PERIODOS = [["3M", 92], ["6M", 183], ["1A", 365], ["2A", 730], ["5A", 1826], ["10A", 3650]];
+
+// preferencias guardadas en este teléfono (marcadores, activos favoritos, plantillas)
+const pref = {
+  leer(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  guardar(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+let marcadores = pref.leer("marcadores", ["gap_fill", "vela_apertura", "balance_inicial", "ib_ruptura", "rango_previo"]);
+let favoritos = pref.leer("favoritos", ["SPY", "QQQ", "EURUSD=X", "MGC=F"]);
+let plantillas = pref.leer("plantillas", []);
+let ultimoReporte = null, tablaDias = { filtro: "", col: 0, asc: false, mostrar: 25 };
 
 async function verReportes() {
   $("#titulo").textContent = "Reportes";
   if (!estado.activos.length) { try { estado.activos = await rpc("app_activos"); } catch (e) { return mostrarError(e); } }
-  const r = estado.rep;
+  const r = estado.rep; r.sub ??= "estandar";
+  const estrella = (on) => on ? "★" : "☆";
   $("#contenido").innerHTML = `
-    <div class="chips">${REPORTES.map(([k, t]) => `<button class="chip ${r.reporte === k ? "on" : ""}" data-r="${k}">${t}</button>`).join("")}</div>
-    <select id="sel-activo">${estado.activos.map((a) => `<option value="${esc(a.simbolo)}" ${a.simbolo === r.simbolo ? "selected" : ""}>${esc(nombreCorto(a.simbolo))} — ${esc(a.nombre)}</option>`).join("")}</select>
-    <div class="seg" id="seg-per">${PERIODOS.map(([t, d]) => `<button data-d="${d}" class="${r.dias === d ? "on" : ""}">${t}</button>`).join("")}</div>
+    <div class="chips" id="marc">${marcadores.map((k) => `<button class="chip ${r.reporte === k ? "on" : ""}" data-mr="${k}">${esc(nombreRep(k))}</button>`).join("")}
+      ${favoritos.map((s) => `<button class="chip ${r.simbolo === s ? "on" : ""}" data-fs="${esc(s)}">↗ ${esc(nombreCorto(s))}</button>`).join("")}</div>
+    <details class="card ajustes" ${r.abierto ? "open" : ""} id="ajustes"><summary><b>Ajustes del reporte</b>
+      <span class="nota">${esc(nombreRep(r.reporte))} · ${esc(nombreCorto(r.simbolo))} · ${(PERIODOS.find(([, d]) => d === r.dias) || ["", ""])[0]}</span></summary>
+      <label class="et">Plantilla</label>
+      <div class="fila-aj"><select id="sel-pl"><option value="">— Sin plantilla —</option>${plantillas.map((p, i) => `<option value="${i}">${esc(p.nombre)}</option>`).join("")}</select>
+        <button class="btn-ic" id="b-pl-borrar" title="Borrar plantilla">🗑</button></div>
+      <div class="fila-aj" id="pl-nueva"><input id="pl-nombre" placeholder="Nombre de la plantilla" style="margin:0"><button class="btn-ic" id="b-pl-guardar">Guardar</button></div>
+      <label class="et">Reporte</label>
+      <div class="fila-aj"><select id="sel-rep">${GRUPOS_REP.map(([g, rs]) => `<optgroup label="${esc(g)}">${rs.map(([k, t]) => `<option value="${k}" ${r.reporte === k ? "selected" : ""}>${esc(t)}</option>`).join("")}</optgroup>`).join("")}</select>
+        <button class="btn-ic" id="b-marcar" title="Marcador">${estrella(marcadores.includes(r.reporte))}</button></div>
+      <label class="et">Sub-reporte</label>
+      <select id="sel-sub"><option value="estandar">Estándar</option></select>
+      <label class="et">Activo</label>
+      <div class="fila-aj"><select id="sel-activo">${estado.activos.map((a) => `<option value="${esc(a.simbolo)}" ${a.simbolo === r.simbolo ? "selected" : ""}>${esc(nombreCorto(a.simbolo))} — ${esc(a.nombre)}</option>`).join("")}</select>
+        <button class="btn-ic" id="b-fav" title="Lista de seguimiento">${estrella(favoritos.includes(r.simbolo))}</button></div>
+      <label class="et">Periodo</label>
+      <div class="seg" id="seg-per" style="margin:0">${PERIODOS.map(([t, d]) => `<button data-d="${d}" class="${r.dias === d ? "on" : ""}">${t}</button>`).join("")}</div>
+    </details>
     <div id="rep"><div class="vacio">Calculando…</div></div>`;
-  document.querySelectorAll("[data-r]").forEach((b) => b.addEventListener("click", () => { estado.rep.reporte = b.dataset.r; verReportes(); }));
-  $("#sel-activo").addEventListener("change", (e) => { estado.rep.simbolo = e.target.value; cargarReporte(); });
-  document.querySelectorAll("#seg-per button").forEach((b) => b.addEventListener("click", () => {
-    estado.rep.dias = Number(b.dataset.d);
-    document.querySelectorAll("#seg-per button").forEach((x) => x.classList.toggle("on", x === b));
-    cargarReporte();
-  }));
-  document.querySelector(".chip.on")?.scrollIntoView({ inline: "center", block: "nearest" });
+  const recargar = () => verReportes();
+  document.querySelectorAll("[data-mr]").forEach((b) => b.addEventListener("click", () => { r.reporte = b.dataset.mr; r.sub = "estandar"; recargar(); }));
+  document.querySelectorAll("[data-fs]").forEach((b) => b.addEventListener("click", () => { r.simbolo = b.dataset.fs; recargar(); }));
+  $("#ajustes").addEventListener("toggle", (e) => { r.abierto = e.target.open; });
+  $("#sel-rep").addEventListener("change", (e) => { r.reporte = e.target.value; r.sub = "estandar"; recargar(); });
+  $("#sel-activo").addEventListener("change", (e) => { r.simbolo = e.target.value; recargar(); });
+  $("#sel-sub").addEventListener("change", (e) => { r.sub = e.target.value; if (ultimoReporte) pintarReporte(ultimoReporte); });
+  $("#b-marcar").addEventListener("click", () => {
+    marcadores = marcadores.includes(r.reporte) ? marcadores.filter((k) => k !== r.reporte) : [...marcadores, r.reporte];
+    pref.guardar("marcadores", marcadores); recargar();
+  });
+  $("#b-fav").addEventListener("click", () => {
+    favoritos = favoritos.includes(r.simbolo) ? favoritos.filter((k) => k !== r.simbolo) : [...favoritos, r.simbolo];
+    pref.guardar("favoritos", favoritos); recargar();
+  });
+  document.querySelectorAll("#seg-per button").forEach((b) => b.addEventListener("click", () => { r.dias = Number(b.dataset.d); recargar(); }));
+  $("#sel-pl").addEventListener("change", (e) => {
+    const p = plantillas[Number(e.target.value)]; if (!p) return;
+    Object.assign(r, { reporte: p.reporte, simbolo: p.simbolo, dias: p.dias, sub: p.sub || "estandar", plantilla: e.target.value }); recargar();
+  });
+  if (r.plantilla != null) $("#sel-pl").value = r.plantilla;
+  $("#b-pl-guardar").addEventListener("click", () => {
+    const nombre = $("#pl-nombre").value.trim() || `${nombreRep(r.reporte)} · ${nombreCorto(r.simbolo)}`;
+    plantillas.push({ nombre, reporte: r.reporte, simbolo: r.simbolo, dias: r.dias, sub: r.sub });
+    pref.guardar("plantillas", plantillas); r.plantilla = String(plantillas.length - 1); recargar();
+  });
+  $("#b-pl-borrar").addEventListener("click", () => {
+    const i = $("#sel-pl").value; if (i === "") return;
+    plantillas.splice(Number(i), 1); pref.guardar("plantillas", plantillas); r.plantilla = null; recargar();
+  });
+  document.querySelector("#marc .chip.on")?.scrollIntoView({ inline: "center", block: "nearest" });
   cargarReporte();
 }
 
 async function cargarReporte() {
   const el = $("#rep"), r = estado.rep;
+  if (r.reporte === "calc_riesgo") { $("#sel-sub").disabled = true; return pintarCalculadora(el); }
   el.style.opacity = .5;
   let j;
   try { j = await rpc("app_reporte", { p_simbolo: r.simbolo, p_reporte: r.reporte, p_dias: r.dias }); }
   catch (e) { el.style.opacity = 1; el.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
   el.style.opacity = 1;
-  const kpi = (k) => k ? `<div class="k"><div class="v" style="${k.pct == null ? "font-size:19px" : ""}">${k.pct != null ? Number(k.pct).toFixed(1) + "%" : esc(k.valor ?? "—")}</div>
-      <div class="l">${esc(k.label)}${k.n != null && k.n !== "" ? ` · ${k.n} casos` : ""}${k.nota ? `<br>${esc(k.nota)}` : ""}</div></div>` : "";
-  const grupo = (g) => {
-    const items = g.items || [];
-    const max = g.unidad === "valor" ? Math.max(...items.map((i) => +i.valor || 0), 0.0001) : 100;
-    return `<div class="card"><h3>${esc(g.titulo)}</h3>${items.map((i) => {
-      const v = g.unidad === "valor" ? +i.valor : +i.pct;
-      return `<div class="hbar"><span class="lbl">${esc(i.label)}</span><span class="t"><i style="width:${Math.max(0, Math.min(100, (v / max) * 100))}%"></i></span>
-        <span class="v">${isNaN(v) ? "—" : v.toFixed(g.unidad === "valor" ? 2 : 0) + "%"}</span></div>`;
-    }).join("")}<div class="nota">${items.map((i) => `${esc(i.label)}: ${i.n}`).join(" · ")} casos</div></div>`;
-  };
-  const rec = j.recientes || { cols: [], filas: [] };
+  ultimoReporte = j; tablaDias = { filtro: "", col: 0, asc: false, mostrar: 25 };
+  // sub-reportes = cada grupo del reporte (por día, por tamaño, etc.)
+  const sub = $("#sel-sub");
+  sub.innerHTML = `<option value="estandar">Estándar (todo)</option>` + (j.grupos || []).map((g, i) => `<option value="${i}">${esc(g.titulo)}</option>`).join("");
+  sub.disabled = !(j.grupos || []).length;
+  if (r.sub !== "estandar" && !(j.grupos || [])[Number(r.sub)]) r.sub = "estandar";
+  sub.value = r.sub;
+  pintarReporte(j);
+}
+
+// Interpretación del último día del reporte: setup, probabilidad histórica y sesgo
+function ultimoCaso(j) {
+  const f = (j.recientes?.filas || [])[0]; if (!f) return null;
+  const k = j.kpis || [];
+  const caso = (setup, kp, sesgo) => kp && kp.pct != null ? { fecha: f[0], setup, pct: kp.pct, n: kp.n, evento: kp.label, sesgo } : null;
+  switch (j.reporte) {
+    case "vela_apertura": return String(f[1]).startsWith("Verde") ? caso("1ª hora verde", k[0], "largo") : caso("1ª hora roja", k[1], "corto");
+    case "ib_ruptura": { const kp = k.find((x) => x.label === f[2]); return caso(f[2], kp, f[2] === "Solo arriba" ? "largo" : f[2] === "Solo abajo" ? "corto" : "neutral"); }
+    case "rango_previo_sesion": return f[1] === "Solo máximo previo" ? caso("Rompió el máximo previo", k[2], "largo")
+      : f[1] === "Solo mínimo previo" ? caso("Rompió el mínimo previo", k[3], "corto") : caso(f[1], k[0], "neutral");
+    case "gap_sesion": return String(f[1]).startsWith("-") ? caso("Gap a la baja " + f[1], k[1], "largo") : caso("Gap al alza " + f[1], k[0], "corto");
+    case "medianoche": return f[1] === "Abre arriba" ? caso("Abrió sobre la apertura de medianoche", k[1], "corto") : caso("Abrió bajo la apertura de medianoche", k[2], "largo");
+    case "pivotes": return f[1] === "sobre P" ? caso("Abrió sobre el pivote", k[0], "largo") : caso("Abrió bajo el pivote", k[2], "corto");
+    case "envolventes": return f[1] === "Alcista" ? caso("Envolvente alcista", k[0], "largo") : caso("Envolvente bajista", k[2], "corto");
+    default: return null;
+  }
+}
+
+function pintarReporte(j) {
+  const el = $("#rep"), r = estado.rep;
+  const kpis = (j.kpis || []).filter((k) => k && k.pct != null);
+  const otros = (j.kpis || []).filter((k) => k && k.pct == null);
+  const uc = ultimoCaso(j);
+  const tarjetaHoy = uc ? `<div class="card enjuego-rep">
+      <div class="nota">Último caso · ${esc(nombreCorto(j.simbolo))} · ${esc(uc.fecha)}</div>
+      <div class="ej-fila"><div><b>${esc(uc.setup)}</b><div class="nota">${esc(uc.evento)}</div></div>
+        <div class="ej-pct ${uc.pct >= 50 ? "up" : "down"}">${Number(uc.pct).toFixed(0)}%</div></div>
+      <div class="nota">Sesgo: <b class="${uc.sesgo === "largo" ? "up" : uc.sesgo === "corto" ? "down" : ""}">${uc.sesgo}</b> · ${uc.n} casos</div></div>` : "";
+  // gráfico de barras apiladas: % que cumple vs. no cumple, una barra por indicador
+  const corto = (s) => s.length > 34 ? s.slice(0, 32) + "…" : s;
+  const grafico = kpis.length ? `<div class="card"><h3>Gráfico</h3><div class="apiladas">${kpis.map((k) =>
+      `<div class="ap"><div class="ap-col"><i class="no" style="height:${100 - k.pct}%"><span>${(100 - k.pct).toFixed(0)}%</span></i><i class="si" style="height:${k.pct}%"><span>${Number(k.pct).toFixed(0)}%</span></i></div>
+        <div class="ap-lbl">${esc(corto(k.label))}</div></div>`).join("")}</div>
+      <div class="leyenda"><span><i style="background:var(--acc)"></i>se cumple</span><span><i style="background:var(--panel2)"></i>no se cumple</span></div></div>` : "";
+  const tabla = (kpis.length || otros.length) ? `<div class="card"><h3>Resultados</h3><table class="tabla">
+      <tr><th>Categoría</th><th>Frecuencia</th><th>%</th></tr>
+      ${kpis.map((k) => `<tr><td>${esc(k.label)}</td><td>${Math.round(k.pct * k.n / 100)} de ${k.n}</td><td><b>${Number(k.pct).toFixed(1)}%</b></td></tr>`).join("")}
+      ${otros.map((k) => `<tr><td>${esc(k.label)}${k.nota ? `<div class="nota">${esc(k.nota)}</div>` : ""}</td><td>${k.n ?? ""}</td><td><b>${esc(k.valor ?? "—")}</b></td></tr>`).join("")}</table></div>` : "";
+  const grupos = (j.grupos || []).filter((g, i) => r.sub === "estandar" || String(i) === String(r.sub));
   el.innerHTML = `
-    <div class="card" style="padding:12px 14px"><b>${esc(j.titulo)}</b> <span class="tag">${esc(nombreCorto(j.simbolo))}</span>
-      <div class="nota" style="margin-top:4px">${esc(j.descripcion)}</div>
-      <div class="nota" style="margin-top:6px">${esc(j.desde)} → ${esc(j.hasta)} · ${j.n} casos</div></div>
-    ${j.reporte === "gap_fill" && /=X$|-USD$|=F$/.test(j.simbolo) ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Este mercado cotiza casi 24 horas: la apertura diaria casi coincide con el cierre anterior, así que el gap fill no es significativo aquí. Úsalo sobre todo en acciones y ETF.</div>` : ""}
+    <div class="nota" style="margin:2px 2px 8px">${esc(j.titulo)} · ${esc(nombreCorto(j.simbolo))} · ${esc(j.desde ?? "")} → ${esc(j.hasta ?? "")} · ${j.n} casos</div>
+    ${j.reporte === "gap_fill" && /=X$|-USD$|=F$/.test(j.simbolo) ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Este mercado cotiza casi 24 horas: la apertura diaria casi coincide con el cierre anterior. Usa "Gap de sesión" para forex y futuros.</div>` : ""}
     ${j.nota_ib ? `<div class="card nota">ℹ️ ${esc(j.nota_ib)}</div>` : ""}
-    <div class="kpis">${(j.kpis || []).map(kpi).join("")}</div>
-    ${(j.grupos || []).map(grupo).join("")}
-    <div class="card"><h3>Casos recientes</h3><table class="tabla">
-      <tr>${rec.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>
-      ${(rec.filas || []).map((f) => `<tr>${f.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table></div>
-    <p class="nota">Frecuencias históricas sobre velas ${j.reporte === "balance_inicial" ? "intradía (5 y 60 min)" : "diarias"}. No son garantías ni recomendaciones de inversión.</p>`;
+    ${!j.n ? `<div class="card nota">${esc(j.descripcion)}</div>` : ""}
+    ${tarjetaHoy}${grafico}${tabla}
+    ${grupos.map(grupoHtml).join("")}
+    <div class="card" id="dias"></div>
+    <details class="card"><summary><b>¿Qué mide este reporte?</b></summary><p class="nota" style="margin:8px 0 0">${esc(j.descripcion)}</p>
+      <p class="nota">Frecuencias históricas. No son garantías ni recomendaciones de inversión.</p></details>`;
+  pintarTablaDias();
+}
+
+function grupoHtml(g) {
+  const items = g.items || [];
+  const max = g.unidad === "valor" ? Math.max(...items.map((i) => +i.valor || 0), 0.0001) : 100;
+  return `<div class="card"><h3>${esc(g.titulo)}</h3>${items.map((i) => {
+    const v = g.unidad === "valor" ? +i.valor : +i.pct;
+    return `<div class="hbar"><span class="lbl">${esc(i.label)}</span><span class="t"><i style="width:${Math.max(0, Math.min(100, (v / max) * 100))}%"></i></span>
+      <span class="v">${isNaN(v) || i.pct == null && g.unidad !== "valor" ? "—" : v.toFixed(g.unidad === "valor" ? 2 : 0) + "%"}</span></div>`;
+  }).join("")}<div class="nota">${items.map((i) => `${esc(i.label)}: ${i.n}`).join(" · ")} casos</div></div>`;
+}
+
+// Tabla de todos los días del periodo: filtro por texto, orden por columna, racha actual
+function pintarTablaDias() {
+  const caja = $("#dias"), j = ultimoReporte; if (!caja || !j) return;
+  const rec = j.recientes || { cols: [], filas: [] }, t = tablaDias;
+  if (!rec.cols.length) { caja.remove(); return; }
+  let filas = (rec.filas || []).filter((f) => !t.filtro || f.some((v) => String(v).toLowerCase().includes(t.filtro.toLowerCase())));
+  filas = [...filas].sort((a, b) => {
+    const x = a[t.col], y = b[t.col], nx = parseFloat(x), ny = parseFloat(y);
+    const c = !isNaN(nx) && !isNaN(ny) && t.col !== 0 ? nx - ny : String(x).localeCompare(String(y));
+    return t.asc ? c : -c;
+  });
+  // racha: cuántos casos seguidos (los más recientes) tienen el mismo resultado en la última columna
+  const todas = rec.filas || [], ult = rec.cols.length - 1;
+  let racha = 0; while (racha < todas.length && todas[racha][ult] === todas[0]?.[ult]) racha++;
+  caja.innerHTML = `<h3>Todos los días <span class="nota">(${filas.length} de ${todas.length})</span></h3>
+    ${todas.length ? `<div class="nota" style="margin-bottom:6px">Racha actual: <b>${racha}</b> caso${racha === 1 ? "" : "s"} seguido${racha === 1 ? "" : "s"} con "${esc(rec.cols[ult])}" = <b>${esc(todas[0][ult])}</b></div>` : ""}
+    <input id="f-dias" placeholder="Filtrar (ej. Sí, Mar, Verde, 2026-10)" value="${esc(t.filtro)}" style="margin:0 0 8px;padding:9px 12px;font-size:15px">
+    <div class="tabla-scroll"><table class="tabla"><tr>${rec.cols.map((c, i) => `<th data-col="${i}" style="cursor:pointer">${esc(c)}${t.col === i ? (t.asc ? " ▲" : " ▼") : ""}</th>`).join("")}</tr>
+    ${filas.slice(0, t.mostrar).map((f) => `<tr>${f.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table></div>
+    ${filas.length > t.mostrar ? `<button class="primario" id="b-mas" style="background:var(--panel2);color:var(--txt)">Ver ${Math.min(25, filas.length - t.mostrar)} más</button>` : ""}`;
+  const inp = $("#f-dias");
+  inp.addEventListener("input", (e) => { t.filtro = e.target.value; t.mostrar = 25; const pos = e.target.selectionStart; pintarTablaDias(); const n = $("#f-dias"); n.focus(); n.setSelectionRange(pos, pos); });
+  caja.querySelectorAll("th[data-col]").forEach((th) => th.addEventListener("click", () => {
+    const c = Number(th.dataset.col); t.asc = t.col === c ? !t.asc : false; t.col = c; pintarTablaDias();
+  }));
+  $("#b-mas")?.addEventListener("click", () => { t.mostrar += 25; pintarTablaDias(); });
+}
+
+// ===================== CALCULADORA DE RIESGO =====================
+// Probabilidad de al menos una racha de L pérdidas seguidas en N operaciones con tasa de acierto w (programación dinámica)
+function probRacha(L, N, w) {
+  if (L <= 0) return 1;
+  const q = 1 - w; let dp = new Array(L).fill(0); dp[0] = 1; let fallo = 0;
+  for (let i = 0; i < N; i++) {
+    const nx = new Array(L).fill(0);
+    for (let k = 0; k < L; k++) { if (!dp[k]) continue; nx[0] += dp[k] * w; if (k + 1 >= L) fallo += dp[k] * q; else nx[k + 1] += dp[k] * q; }
+    dp = nx;
+  }
+  return fallo;
+}
+let calc = pref.leer("calc_riesgo", { cuenta: 10000, riesgo: 200 });
+function pintarCalculadora(el) {
+  const D = Math.max(1, Number(calc.cuenta) || 0), R = Math.max(1, Number(calc.riesgo) || 0);
+  const pct = R / D * 100, L = Math.floor(D / R);
+  const nivel = pct <= 2 ? ["Conservador", "up"] : pct <= 5 ? ["Moderado", ""] : pct <= 10 ? ["Agresivo", "down"] : ["Riesgo muy alto", "down"];
+  const tasas = [0.4, 0.5, 0.6, 0.7];
+  el.innerHTML = `<div class="card"><h3>Calculadora de riesgo</h3>
+      <label class="et">Cuenta o drawdown máximo permitido (USD)</label><input id="c-cuenta" type="number" inputmode="decimal" value="${D}" style="margin:0">
+      <label class="et">Riesgo por operación (USD)</label><input id="c-riesgo" type="number" inputmode="decimal" value="${R}" style="margin:0">
+      <p class="nota">Con una cuenta de fondeo usa el drawdown máximo (ej. 2.000 en una cuenta de 50K), no el tamaño de la cuenta.</p></div>
+    <div class="kpis">
+      <div class="k"><div class="v ${nivel[1]}">${pct.toFixed(1)}%</div><div class="l">Riesgo por operación · <b>${nivel[0]}</b></div></div>
+      <div class="k"><div class="v">${L}</div><div class="l">Pérdidas seguidas hasta quemar la cuenta</div></div>
+      <div class="k"><div class="v">${fmtValor(D * 0.02)}</div><div class="l">Riesgo recomendado (2 %)</div></div>
+      <div class="k"><div class="v">${Math.floor(D / (D * 0.02))}</div><div class="l">Pérdidas seguidas con el 2 %</div></div></div>
+    <div class="card"><h3>Probabilidad de ${L} pérdidas seguidas en 100 operaciones</h3>
+      ${tasas.map((w) => { const p = probRacha(L, 100, w) * 100; return `<div class="hbar"><span class="lbl">Acierto ${w * 100}%</span>
+        <span class="t"><i style="width:${p}%;background:${p >= 50 ? "var(--down)" : p >= 20 ? "var(--warn)" : "var(--up)"}"></i></span><span class="v">${p < 0.1 ? "<0.1" : p.toFixed(1)}%</span></div>`; }).join("")}
+      <p class="nota">Es el peor caso: perder todas esas operaciones seguidas. Mientras más alto el riesgo por operación, más alto tiene que ser tu % de acierto para sobrevivir.</p></div>`;
+  const upd = () => { calc = { cuenta: $("#c-cuenta").value, riesgo: $("#c-riesgo").value }; pref.guardar("calc_riesgo", calc); pintarCalculadora(el); };
+  $("#c-cuenta").addEventListener("change", upd); $("#c-riesgo").addEventListener("change", upd);
 }
 
 // ===================== CONSULTAS (chat con el Agente 5 · Analista IA) =====================
