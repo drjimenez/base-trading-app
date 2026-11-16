@@ -480,6 +480,8 @@ const GRUPOS_REP = [
   ["Sesión / intradía", [["vela_apertura", "Vela de apertura (continuación)"], ["balance_inicial", "Balance inicial (IB): proyección"],
     ["ib_ruptura", "IB: tipo de ruptura y cierre"], ["rango_previo_sesion", "Rango de la sesión previa"], ["gap_sesion", "Gap de sesión y % de llenado"],
     ["pivotes", "Puntos pivote"], ["power_hour", "Power hour"]]],
+  ["Velas de 5 min", [["orb_5", "ORB 5 min"], ["orb_15", "ORB 15 min"], ["orb_30", "ORB 30 min"],
+    ["vela_apertura_15", "Vela de apertura 15 min"], ["vela_apertura_30", "Vela de apertura 30 min"], ["ib_rechazo", "IB por rechazo"]]],
   ["Mercados 24 h", [["sesiones", "Sesiones Asia / Londres / NY"], ["medianoche", "Apertura de medianoche (ICT)"], ["apertura_semanal", "Apertura semanal"]]],
   ["Herramientas", [["calc_riesgo", "Calculadora de riesgo"]]],
 ];
@@ -581,6 +583,11 @@ function ultimoCaso(j) {
   const k = j.kpis || [];
   const caso = (setup, kp, sesgo) => kp && kp.pct != null ? { fecha: f[0], setup, pct: kp.pct, n: kp.n, evento: kp.label, sesgo } : null;
   switch (j.reporte) {
+    case "orb_5": case "orb_15": case "orb_30":
+      return f[2] === "Arriba" ? caso("Rompió primero hacia arriba", k[2], "largo") : f[2] === "Abajo" ? caso("Rompió primero hacia abajo", k[3], "corto") : null;
+    case "ib_rechazo": return f[1] === "Mínimo primero" ? caso("Se formó primero el mínimo del IB", k[0], "largo")
+      : f[1] === "Máximo primero" ? caso("Se formó primero el máximo del IB", k[1], "corto") : null;
+    case "vela_apertura_15": case "vela_apertura_30":
     case "vela_apertura": return String(f[1]).startsWith("Verde") ? caso("1ª hora verde", k[0], "largo") : caso("1ª hora roja", k[1], "corto");
     case "ib_ruptura": { const kp = k.find((x) => x.label === f[2]); return caso(f[2], kp, f[2] === "Solo arriba" ? "largo" : f[2] === "Solo abajo" ? "corto" : "neutral"); }
     case "rango_previo_sesion": return f[1] === "Solo máximo previo" ? caso("Rompió el máximo previo", k[2], "largo")
@@ -619,6 +626,7 @@ function pintarReporte(j) {
     ${j.reporte === "gap_fill" && /=X$|-USD$|=F$/.test(j.simbolo) ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Este mercado cotiza casi 24 horas: la apertura diaria casi coincide con el cierre anterior. Usa "Gap de sesión" para forex y futuros.</div>` : ""}
     ${j.nota_ib ? `<div class="card nota">ℹ️ ${esc(j.nota_ib)}</div>` : ""}
     ${!j.n ? `<div class="card nota">${esc(j.descripcion)}</div>` : ""}
+    ${j.n > 0 && j.n < 100 ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Muestra pequeña: ${j.n} días. Este reporte usa velas de 5 min, que la base acumula día a día; los porcentajes se vuelven más confiables con más casos.</div>` : ""}
     ${tarjetaHoy}${grafico}${tabla}
     ${grupos.map(grupoHtml).join("")}
     <div class="card" id="dias"></div>
