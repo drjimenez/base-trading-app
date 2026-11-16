@@ -498,6 +498,9 @@ const SUGERENCIAS = [
   "Tamaño medio del IB en % por mes para EURUSD en el último año",
 ];
 const COLORES = ["#60a5fa", "#22c55e", "#f59e0b", "#a78bfa", "#ef4444", "#14b8a6"];
+// false = las preguntas se hacen en el proyecto de Claude y aquí solo se ven las consultas guardadas.
+// true  = caja de chat activa (requiere el secreto ANTHROPIC_API_KEY en la Edge Function "analista").
+const CHAT_EN_APP = false;
 let chat = [];          // conversación de esta sesión: {rol, texto, consulta?}
 let enviando = false;
 
@@ -506,6 +509,7 @@ async function verConsultas() {
   const c = $("#contenido");
   c.innerHTML = `<div id="hilo"></div><div class="grupo">Consultas guardadas</div><div id="guardadas"><div class="vacio">Cargando…</div></div>`;
   pintarHilo();
+  if (!CHAT_EN_APP) { document.body.classList.remove("con-chat"); cargarGuardadas(); return; }
   // caja de chat fija sobre la barra inferior
   const comp = document.createElement("form");
   comp.id = "composer"; comp.className = "composer";
@@ -521,6 +525,12 @@ async function verConsultas() {
 
 function pintarHilo() {
   const h = $("#hilo"); if (!h) return;
+  if (!CHAT_EN_APP) {
+    h.innerHTML = `<div class="card"><h3>Analista IA</h3>
+      <div class="nota">Haz tus preguntas a Claude en el proyecto <b>Base De Datos Trading</b>. Cada respuesta se guarda aquí como una consulta;
+      al abrirla se vuelve a calcular con los datos del día.</div></div>`;
+    return;
+  }
   if (!chat.length) {
     h.innerHTML = `<div class="card"><h3>Analista IA</h3>
       <div class="nota">Escribe una pregunta sobre tus datos. El agente consulta la base (solo lectura), arma el gráfico y lo guarda abajo como una consulta nueva de la app.</div>
@@ -614,7 +624,7 @@ function alertaSuave(cont, msg) { cont.insertAdjacentHTML("beforeend", `<div cla
 // Tarjeta de resultado: título, resumen, gráfico y tabla
 function cuerpoConsulta(q, clave, sinCabecera) {
   const filas = q.filas || [];
-  const cols = filas.length ? Object.keys(filas[0]) : [];
+  const cols = columnasDe(q);
   const cab = sinCabecera ? "" : `<div class="cq-cab"><div style="flex:1"><b>${esc(q.titulo)}</b>
       <div class="nota">Guardada en Consultas · ${filas.length} filas</div></div></div>`;
   return `${cab}<div class="${sinCabecera ? "" : "cq-cuerpo"}">
@@ -626,6 +636,12 @@ function cuerpoConsulta(q, clave, sinCabecera) {
       ${q.sql ? `<pre class="nota" style="white-space:pre-wrap;background:var(--panel2);padding:8px;border-radius:8px;margin-top:8px">${esc(q.sql)}</pre>` : ""}
     </details></div>`;
 }
+// orden de columnas: el de visual.columnas si existe (jsonb no conserva el orden de las claves)
+function columnasDe(q) {
+  const f = (q.filas || [])[0]; if (!f) return [];
+  const todas = Object.keys(f), pref = (q.visual?.columnas || []).filter((c) => todas.includes(c));
+  return [...pref, ...todas.filter((c) => !pref.includes(c))];
+}
 const fmtCelda = (v) => v == null ? "—" : typeof v === "number" ? v.toLocaleString("es-CR", { maximumFractionDigits: 4 }) : typeof v === "object" ? JSON.stringify(v) : v;
 const fmtValor = (v, pct) => v == null || isNaN(v) ? "—" : Number(v).toLocaleString("es-CR", { maximumFractionDigits: 2 }) + (pct ? "%" : "");
 
@@ -633,7 +649,7 @@ function dibujarVisual(q, clave) {
   const el = document.getElementById(`vis-${clave}`); if (!el) return;
   const filas = q.filas || [], v = q.visual || { tipo: "tabla" };
   if (!filas.length) { el.innerHTML = `<div class="vacio nota">La consulta no devolvió filas.</div>`; return; }
-  const cols = Object.keys(filas[0]);
+  const cols = columnasDe(q);
   const esNum = (c) => filas.every((f) => f[c] == null || !isNaN(Number(f[c])));
   const x = cols.includes(v.x) ? v.x : cols.find((c) => !esNum(c)) || cols[0];
   let ys = (Array.isArray(v.y) ? v.y : []).filter((c) => cols.includes(c));
