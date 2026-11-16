@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Base Trading</title>
+<meta name="theme-color" content="#0b1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Trading">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#111a2e; --panel2:#16213a; --line:#22304d; --txt:#e6edf7; --mut:#8a9bb8;
+    --up:#22c55e; --down:#ef4444; --acc:#60a5fa; --warn:#f59e0b;
+    --safe-t:env(safe-area-inset-top); --safe-b:env(safe-area-inset-bottom);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+  body{min-height:100vh;padding-bottom:calc(68px + var(--safe-b))}
+  header{position:sticky;top:0;z-index:5;background:rgba(11,18,32,.92);backdrop-filter:blur(12px);
+         padding:calc(var(--safe-t) + 10px) 16px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  header h1{font-size:20px;margin:0;flex:1;font-weight:700;letter-spacing:-.2px}
+  .btn-ic{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:10px;height:34px;min-width:34px;padding:0 10px;font-size:15px}
+  main{padding:12px 14px}
+  .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none}
+  .chip{flex:none;padding:6px 12px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--mut);font-size:13px}
+  .chip.on{background:var(--acc);border-color:var(--acc);color:#04101f;font-weight:600}
+  .grupo{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.8px;margin:14px 2px 6px}
+  .lista{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .fila{display:flex;align-items:center;padding:12px 14px;gap:10px;border-bottom:1px solid var(--line)}
+  .fila:last-child{border-bottom:0}
+  .fila:active{background:var(--panel2)}
+  .sim{font-weight:650}
+  .nom{color:var(--mut);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+  .der{margin-left:auto;text-align:right}
+  .px{font-variant-numeric:tabular-nums;font-weight:600}
+  .pill{display:inline-block;min-width:66px;text-align:center;border-radius:7px;padding:2px 6px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+  .pill.up{background:rgba(34,197,94,.15);color:var(--up)} .pill.down{background:rgba(239,68,68,.15);color:var(--down)}
+  .up{color:var(--up)} .down{color:var(--down)} .mut{color:var(--mut)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+  .card h3{margin:0 0 10px;font-size:15px}
+  .big{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .kpi{background:var(--panel2);border-radius:10px;padding:8px 10px}
+  .kpi b{display:block;font-size:16px;font-variant-numeric:tabular-nums} .kpi span{color:var(--mut);font-size:11px}
+  #grafico{height:300px;margin:0 -6px} #grafico5m{height:160px;margin:0 -6px}
+  .seg{display:flex;background:var(--panel2);border-radius:10px;padding:3px;margin-bottom:10px}
+  .seg button{flex:1;background:none;border:0;color:var(--mut);padding:6px 0;border-radius:8px;font-size:13px}
+  .seg button.on{background:var(--panel);color:var(--txt);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+  .prob{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .prob:last-child{border-bottom:0}
+  .barra{grid-column:1/-1;height:8px;background:rgba(239,68,68,.35);border-radius:4px;overflow:hidden;margin:4px 0}
+  .barra i{display:block;height:100%;background:var(--up)}
+  .nota{color:var(--mut);font-size:12px;line-height:1.45}
+  .tabla{width:100%;border-collapse:collapse;font-size:13px}
+  .tabla td,.tabla th{padding:7px 4px;border-bottom:1px solid var(--line);text-align:right}
+  .tabla th{color:var(--mut);font-weight:500} .tabla td:first-child,.tabla th:first-child{text-align:left}
+  nav{position:fixed;bottom:0;left:0;right:0;z-index:6;display:flex;background:rgba(11,18,32,.95);backdrop-filter:blur(12px);
+      border-top:1px solid var(--line);padding-bottom:var(--safe-b)}
+  nav button{flex:1;background:none;border:0;color:var(--mut);padding:9px 0 7px;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
+  nav button svg{width:24px;height:24px}
+  nav button.on{color:var(--acc)}
+  .login{max-width:380px;margin:12vh auto 0;padding:0 20px}
+  .login h2{font-size:26px;margin:16px 0 4px}
+  input{width:100%;padding:13px 14px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:16px;margin-top:10px}
+  .primario{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:var(--acc);color:#04101f;font-weight:700;font-size:16px}
+  .error{color:var(--down);font-size:13px;margin-top:10px;min-height:18px}
+  .vacio{text-align:center;color:var(--mut);padding:30px 16px}
+  .cargando{opacity:.5;pointer-events:none}
+  .oculto{display:none!important}
+  .atras{background:none;border:0;color:var(--acc);font-size:16px;padding:0;margin-right:4px}
+
+  .setup{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-top:1px solid var(--line)}
+  .setup:first-of-type{border-top:0}
+  .setup .pct{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+  .tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:6px;background:var(--panel2);color:var(--mut);margin-left:6px;vertical-align:middle}
+  .kpis{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+  .kpis .k{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .kpis .k .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .kpis .k .l{font-size:12px;color:var(--mut);line-height:1.3;margin-top:2px}
+  .hbar{display:grid;grid-template-columns:110px 1fr 54px;align-items:center;gap:8px;margin:7px 0;font-size:13px}
+  .hbar .t{height:10px;background:var(--panel2);border-radius:5px;overflow:hidden}
+  .hbar .t i{display:block;height:100%;background:var(--acc);border-radius:5px}
+  .hbar .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+  .hbar .lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  select{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:16px;margin-bottom:10px;-webkit-appearance:none}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<section id="v-login" class="login oculto">
+  <img src="apple-touch-icon.png" width="64" height="64" style="border-radius:14px" alt="">
+  <h2>Base Trading</h2>
+  <div class="mut">Inicia sesión con tu cuenta de Supabase.</div>
+  <form id="f-login">
+    <input id="email" type="email" autocomplete="username" placeholder="Correo" required>
+    <input id="clave" type="password" autocomplete="current-password" placeholder="Contraseña" required>
+    <button class="primario" type="submit">Entrar</button>
+    <div class="error" id="login-err"></div>
+  </form>
+</section>
+
+<!-- ============ APP ============ -->
+<div id="v-app" class="oculto">
+  <header>
+    <button class="atras oculto" id="b-atras">‹ Atrás</button>
+    <h1 id="titulo">Mercados</h1>
+    <button class="btn-ic" id="b-refrescar" aria-label="Actualizar">↻</button>
+  </header>
+  <main id="contenido"></main>
+  <nav>
+    <button data-tab="enjuego" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>En juego</button>
+    <button data-tab="reportes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Reportes</button>
+    <button data-tab="mercados"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>Mercados</button>
+    <button data-tab="estado"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>Estado</button>
+  </nav>
+</div>
+
+<script>
+// ===================== CONFIGURACIÓN =====================
+// La clave "publishable" es pública por diseño: la seguridad está en la base
+// (cada consulta exige sesión iniciada + estar en trading.usuarios_permitidos).
+const SUPABASE_URL = "https://libfloxjezfcndhabrgb.supabase.co";
+const SUPABASE_KEY = "sb_publishable_dS9tTx7sKxGKiXqG__Ef1w_eUltTJlx";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+
+// ===================== UTILIDADES =====================
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const TIPOS = { etf: "ETF e índices", accion: "Acciones", materia_prima: "Materias primas", divisa: "Forex", cripto: "Cripto", indice: "Índices" };
+const decimales = (sim, v) => sim.endsWith("=X") ? (sim.includes("JPY") ? 3 : 5) : Math.abs(v) >= 1000 ? 2 : 2;
+const fmtPx = (sim, v) => v == null ? "—" : Number(v).toLocaleString("es-CR", { minimumFractionDigits: decimales(sim, v), maximumFractionDigits: decimales(sim, v) });
+const fmtPct = (v, d = 2) => v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toLocaleString("es-CR", { minimumFractionDigits: d, maximumFractionDigits: d }) + "%";
+const clase = (v) => v == null ? "mut" : v >= 0 ? "up" : "down";
+const nombreCorto = (sim) => sim.replace("=X", "").replace("=F", "!");
+
+async function rpc(fn, args) {
+  const { data, error } = await db.rpc(fn, args);
+  if (error) {
+    if (error.code === "42501") { mostrarSinAcceso(); throw error; }
+    throw error;
+  }
+  return data;
+}
+
+let estado = { tab: "enjuego", rep: { reporte: "gap_fill", simbolo: "SPY", dias: 730 }, filtro: "todos", activos: [], detalle: null, rango: 365, charts: [] };
+
+function limpiarGraficos() { estado.charts.forEach((c) => c.remove()); estado.charts = []; }
+
+function mostrarError(e) {
+  $("#contenido").innerHTML = `<div class="vacio">No se pudieron cargar los datos.<br><span class="nota">${esc(e.message || e)}</span></div>`;
+}
+
+// ===================== SESIÓN =====================
+async function iniciar() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) return verLogin();
+  let ok = false;
+  try { ok = await rpc("app_tengo_acceso"); } catch { /* sin acceso */ }
+  if (!ok) return mostrarSinAcceso();
+  $("#v-login").classList.add("oculto");
+  $("#v-app").classList.remove("oculto");
+  irTab(estado.tab);
+}
+
+function verLogin() {
+  $("#v-app").classList.add("oculto");
+  $("#v-login").classList.remove("oculto");
+}
+
+async function mostrarSinAcceso() {
+  const { data: { user } } = await db.auth.getUser();
+  $("#v-login").classList.add("oculto");
+  $("#v-app").classList.remove("oculto");
+  $("#titulo").textContent = "Sin acceso";
+  $("#contenido").innerHTML = `<div class="card"><h3>Tu cuenta aún no está autorizada</h3>
+    <p class="nota">Sesión iniciada como <b>${esc(user?.email)}</b>, pero esta cuenta no está en la lista de usuarios permitidos.
+    En Supabase → SQL Editor ejecuta:</p>
+    <pre style="white-space:pre-wrap;font-size:12px;background:var(--panel2);padding:10px;border-radius:8px">insert into trading.usuarios_permitidos
+select id from auth.users where email = '${esc(user?.email)}';</pre>
+    <button class="primario" onclick="location.reload()">Ya lo hice, reintentar</button>
+    <button class="primario" style="background:var(--panel2);color:var(--txt)" onclick="salir()">Cerrar sesión</button></div>`;
+}
+
+async function salir() { await db.auth.signOut(); location.reload(); }
+
+$("#f-login").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const btn = ev.target.querySelector("button");
+  btn.classList.add("cargando"); $("#login-err").textContent = "";
+  const { error } = await db.auth.signInWithPassword({ email: $("#email").value.trim(), password: $("#clave").value });
+  btn.classList.remove("cargando");
+  if (error) { $("#login-err").textContent = error.message === "Invalid login credentials" ? "Correo o contraseña incorrectos." : error.message; return; }
+  iniciar();
+});
+
+// ===================== NAVEGACIÓN =====================
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => irTab(b.dataset.tab)));
+$("#b-atras").addEventListener("click", () => irTab(estado.volverA || "mercados"));
+$("#b-refrescar").addEventListener("click", () => estado.detalle ? verDetalle(estado.detalle) : irTab(estado.tab));
+
+function irTab(tab) {
+  estado.tab = tab; estado.detalle = null; limpiarGraficos();
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  $("#b-atras").classList.add("oculto");
+  window.scrollTo(0, 0);
+  ({ enjuego: verEnJuego, reportes: verReportes, mercados: verMercados, senales: verSenales, estado: verEstado })[tab]();
+}
+
+// ===================== MERCADOS =====================
+async function verMercados() {
+  $("#titulo").textContent = "Mercados";
+  const c = $("#contenido");
+  if (!estado.activos.length) c.innerHTML = `<div class="vacio">Cargando…</div>`;
+  try { estado.activos = await rpc("app_activos"); } catch (e) { return mostrarError(e); }
+  pintarMercados();
+}
+
+function pintarMercados() {
+  const tipos = [...new Set(estado.activos.map((a) => a.tipo))];
+  const chips = ["todos", ...tipos].map((t) =>
+    `<button class="chip ${estado.filtro === t ? "on" : ""}" data-f="${t}">${t === "todos" ? "Todos" : TIPOS[t] || t}</button>`).join("");
+  const grupos = tipos.filter((t) => estado.filtro === "todos" || estado.filtro === t).map((t) => {
+    const filas = estado.activos.filter((a) => a.tipo === t).map((a) => {
+      const tend = a.sobre_sma50 && a.sobre_sma200 ? "var(--up)" : !a.sobre_sma50 && !a.sobre_sma200 ? "var(--down)" : "var(--warn)";
+      return `<div class="fila" data-s="${esc(a.simbolo)}">
+        <span class="dot" style="background:${tend}" title="tendencia"></span>
+        <div><div class="sim">${esc(nombreCorto(a.simbolo))}</div><div class="nom">${esc(a.nombre)}</div></div>
+        <div class="der"><div class="px">${fmtPx(a.simbolo, a.cierre)}</div>
+        <span class="pill ${a.var_1d >= 0 ? "up" : "down"}">${fmtPct(a.var_1d)}</span></div></div>`;
+    }).join("");
+    return `<div class="grupo">${TIPOS[t] || t}</div><div class="lista">${filas}</div>`;
+  }).join("");
+  const fecha = estado.activos.reduce((m, a) => (a.fecha > m ? a.fecha : m), "");
+  $("#contenido").innerHTML = `<div class="chips">${chips}</div>${grupos}
+    <p class="nota" style="margin-top:14px">Cierres diarios al ${esc(fecha)}. Punto: <span class="up">●</span> sobre medias 50 y 200 días ·
+    <span style="color:var(--warn)">●</span> mixto · <span class="down">●</span> bajo ambas.</p>`;
+  document.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => { estado.filtro = b.dataset.f; pintarMercados(); }));
+  document.querySelectorAll(".fila[data-s]").forEach((f) => f.addEventListener("click", () => verDetalle(f.dataset.s)));
+}
+
+// ===================== DETALLE DE ACTIVO =====================
+async function verDetalle(sim) {
+  estado.volverA = estado.tab;
+  estado.detalle = sim; limpiarGraficos();
+  window.scrollTo(0, 0);
+  $("#b-atras").classList.remove("oculto");
+  $("#titulo").textContent = nombreCorto(sim);
+  const a = estado.activos.find((x) => x.simbolo === sim) || {};
+  $("#contenido").innerHTML = `
+    <div class="card">
+      <div class="mut" style="font-size:13px">${esc(a.nombre || sim)}</div>
+      <div class="big">${fmtPx(sim, a.cierre)}</div>
+      <div class="grid3" style="margin-top:10px">
+        <div class="kpi"><span>1 día</span><b class="${clase(a.var_1d)}">${fmtPct(a.var_1d)}</b></div>
+        <div class="kpi"><span>1 mes</span><b class="${clase(a.var_20d)}">${fmtPct(a.var_20d)}</b></div>
+        <div class="kpi"><span>En el año</span><b class="${clase(a.var_ytd)}">${fmtPct(a.var_ytd)}</b></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="seg" id="seg-rango">${[["1M", 31], ["3M", 92], ["6M", 183], ["1A", 365], ["5A", 1826]].map(([t, d]) =>
+        `<button data-d="${d}" class="${estado.rango === d ? "on" : ""}">${t}</button>`).join("")}</div>
+      <div id="grafico"></div>
+      <div class="nota" style="margin-top:6px"><span style="color:#f59e0b">━</span> media 50 días · <span style="color:#a78bfa">━</span> media 200 días</div>
+    </div>
+    <div class="card"><h3>Probabilidades históricas</h3><div id="probs"><div class="vacio">Calculando…</div></div></div>
+    <div class="card"><h3>Últimas horas (velas de 5 min)</h3><div id="grafico5m"></div><div class="nota" id="nota5m"></div></div>`;
+  document.querySelectorAll("#seg-rango button").forEach((b) => b.addEventListener("click", () => {
+    estado.rango = Number(b.dataset.d);
+    document.querySelectorAll("#seg-rango button").forEach((x) => x.classList.toggle("on", x === b));
+    cargarGrafico(sim);
+  }));
+  cargarGrafico(sim); cargarProbabilidades(sim); cargarIntradia(sim);
+}
+
+function opcionesGrafico(el, alto) {
+  return { width: el.clientWidth, height: alto, layout: { background: { color: "transparent" }, textColor: "#8a9bb8", fontSize: 11 },
+    grid: { vertLines: { visible: false }, horzLines: { color: "#1b2742" } },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false },
+    crosshair: { mode: 0 }, handleScale: { pinch: true, mouseWheel: false }, handleScroll: { vertTouchDrag: false } };
+}
+
+let graficoDiario = null;
+async function cargarGrafico(sim) {
+  const el = $("#grafico");
+  if (graficoDiario) { graficoDiario.remove(); estado.charts = estado.charts.filter((c) => c !== graficoDiario); }
+  el.innerHTML = "";
+  let filas;
+  try { filas = await rpc("app_precios", { p_simbolo: sim, p_dias: estado.rango }); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
+  const ch = LightweightCharts.createChart(el, opcionesGrafico(el, 300));
+  graficoDiario = ch; estado.charts.push(ch);
+  const prec = { type: "price", precision: decimales(sim, filas.at(-1)?.cierre || 1), minMove: Math.pow(10, -decimales(sim, filas.at(-1)?.cierre || 1)) };
+  const velas = ch.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", borderVisible: false, wickUpColor: "#22c55e", wickDownColor: "#ef4444", priceFormat: prec });
+  velas.setData(filas.map((f) => ({ time: f.fecha, open: +f.apertura, high: +f.maximo, low: +f.minimo, close: +f.cierre })));
+  const l50 = ch.addLineSeries({ color: "#f59e0b", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, priceFormat: prec });
+  l50.setData(filas.filter((f) => f.sma50).map((f) => ({ time: f.fecha, value: +f.sma50 })));
+  const l200 = ch.addLineSeries({ color: "#a78bfa", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, priceFormat: prec });
+  l200.setData(filas.filter((f) => f.sma200).map((f) => ({ time: f.fecha, value: +f.sma200 })));
+  ch.timeScale().fitContent();
+}
+
+async function cargarProbabilidades(sim) {
+  let filas;
+  try { filas = await rpc("app_probabilidades", { p_simbolo: sim }); } catch (e) { $("#probs").innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
+  if (!filas.length) { $("#probs").innerHTML = `<div class="vacio">Sin historia suficiente.</div>`; return; }
+  const H = { 1: "Próximo día", 5: "Próxima semana (5 días)", 20: "Próximo mes (20 días)" };
+  const html = [1, 5, 20].map((h) => {
+    const g = filas.filter((f) => f.horizonte === h);
+    const base = g.find((f) => f.escenario === "histórico");
+    const cond = g.find((f) => f.escenario === "tendencia + momento") || g.find((f) => f.escenario === "tendencia actual") || base;
+    const dif = cond && base ? cond.prob_sube - base.prob_sube : 0;
+    return `<div class="prob">
+      <b>${H[h]}</b><b class="${cond.prob_sube >= 50 ? "up" : "down"}">${Number(cond.prob_sube).toFixed(1)}% sube</b>
+      <div class="barra"><i style="width:${cond.prob_sube}%"></i></div>
+      <span class="nota">Histórico general: ${Number(base.prob_sube).toFixed(1)}% · diferencia ${dif >= 0 ? "+" : ""}${dif.toFixed(1)} pts · ${cond.muestras} casos</span>
+      <span></span>
+      <span class="nota" style="grid-column:1/-1">Rango típico (80% de los casos): <span class="down">${fmtPct(cond.p10)}</span> a <span class="up">${fmtPct(cond.p90)}</span> · mediana ${fmtPct(cond.p50)}</span>
+    </div>`;
+  }).join("");
+  const condTxt = filas.find((f) => f.escenario === "tendencia + momento")?.condicion || "";
+  $("#probs").innerHTML = `${html}
+    <p class="nota" style="margin-top:10px">Situación actual: <b>${esc(condTxt)}</b>. Se buscan todos los días de los últimos 10 años con esa misma situación y se mide qué pasó después.
+    Una diferencia de pocos puntos frente al histórico general no es una ventaja real. Son frecuencias del pasado, no garantías.</p>
+    <details style="margin-top:8px"><summary class="nota">Ver tabla completa</summary>
+    <table class="tabla"><tr><th>Escenario</th><th>Días</th><th>Casos</th><th>% sube</th><th>Medio</th></tr>
+    ${filas.map((f) => `<tr><td>${esc(f.escenario)}</td><td>${f.horizonte}</td><td>${f.muestras}</td><td>${Number(f.prob_sube).toFixed(1)}</td><td class="${clase(f.ret_medio)}">${fmtPct(f.ret_medio)}</td></tr>`).join("")}
+    </table></details>`;
+}
+
+async function cargarIntradia(sim) {
+  const el = $("#grafico5m");
+  let filas;
+  try { filas = await rpc("app_intradia", { p_simbolo: sim, p_horas: 24 }); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
+  if (!filas.length) { el.innerHTML = `<div class="vacio">Aún no hay datos de 5 minutos.</div>`; return; }
+  const ch = LightweightCharts.createChart(el, { ...opcionesGrafico(el, 160), timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false } });
+  estado.charts.push(ch);
+  const primero = +filas[0].precio, ultimo = +filas.at(-1).precio;
+  const color = ultimo >= primero ? "#22c55e" : "#ef4444";
+  const s = ch.addAreaSeries({ lineColor: color, topColor: color + "55", bottomColor: color + "00", lineWidth: 2,
+    priceFormat: { type: "price", precision: decimales(sim, ultimo), minMove: Math.pow(10, -decimales(sim, ultimo)) } });
+  const off = -new Date().getTimezoneOffset() * 60; // mostrar hora local del iPhone
+  s.setData(filas.map((f) => ({ time: Math.floor(new Date(f.ts).getTime() / 1000) + off, value: +f.precio })));
+  ch.timeScale().fitContent();
+  const hora = new Date(filas.at(-1).ts).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" });
+  $("#nota5m").textContent = `Último precio ${fmtPx(sim, ultimo)} (${hora}, retraso aprox. 15 min) · ${fmtPct((ultimo / primero - 1) * 100)} en el periodo.`;
+}
+
+
+// ===================== EN JUEGO (estilo "what's in play") =====================
+const REP_DE_SETUP = { "Gap al alza": "gap_fill", "Gap a la baja": "gap_fill", "Rompió el máximo de ayer": "rango_previo",
+  "Rompió el mínimo de ayer": "rango_previo", "Día interior": "dia_interior", "Próxima sesión": "rango_previo" };
+let enJuegoFiltro = "todos";
+async function verEnJuego() {
+  $("#titulo").textContent = "En juego";
+  const c = $("#contenido");
+  c.innerHTML = `<div class="vacio">Cargando…</div>`;
+  let filas;
+  try { filas = await rpc("app_en_juego"); } catch (e) { return mostrarError(e); }
+  // mercados de 24 h (cripto, forex): la apertura diaria ≈ cierre anterior, el "gap" no es significativo
+  filas = filas.filter((f) => !(f.setup.startsWith("Gap") && (f.tipo === "cripto" || f.tipo === "divisa")));
+  if (!estado.activos.length) { try { estado.activos = await rpc("app_activos"); } catch {} }
+  const pinta = () => {
+    const tipos = [...new Set(filas.map((f) => f.tipo))];
+    const chips = ["todos", ...tipos].map((t) => `<button class="chip ${enJuegoFiltro === t ? "on" : ""}" data-f="${t}">${t === "todos" ? "Todos" : TIPOS[t] || t}</button>`).join("");
+    const porActivo = {};
+    filas.filter((f) => enJuegoFiltro === "todos" || f.tipo === enJuegoFiltro).forEach((f) => (porActivo[f.simbolo] ??= []).push(f));
+    const tarjetas = Object.entries(porActivo).map(([sim, fs]) => {
+      const a = estado.activos.find((x) => x.simbolo === sim) || {};
+      return `<div class="card">
+        <div style="display:flex;align-items:baseline;gap:8px"><b style="font-size:17px">${esc(nombreCorto(sim))}</b>
+          <span class="mut" style="font-size:12px">${esc(fs[0].fecha)}</span>
+          <span class="der px">${fmtPx(sim, a.cierre)} <span class="${clase(a.var_1d)}" style="font-size:13px">${fmtPct(a.var_1d)}</span></span></div>
+        ${fs.map((f) => `<div class="setup" data-s="${esc(sim)}" data-r="${REP_DE_SETUP[f.setup] || "rango_previo"}">
+          <div><b>${esc(f.setup)}</b><div class="nota">${esc(f.detalle)}</div></div>
+          <div class="pct ${f.prob >= 50 ? "up" : "down"}">${f.prob == null ? "—" : Number(f.prob).toFixed(0) + "%"}</div>
+          <div class="barra" style="grid-column:1/-1"><i style="width:${f.prob || 0}%"></i></div>
+          <div class="nota" style="grid-column:1/-1">${esc(f.evento)} · ${f.muestras} casos (2 años)</div></div>`).join("")}
+      </div>`;
+    }).join("");
+    c.innerHTML = `<div class="chips">${chips}</div>${tarjetas || '<div class="vacio">Sin configuraciones.</div>'}
+      <p class="nota">Patrones formados en la última vela diaria de cada activo y con qué frecuencia se cumplió el evento en los últimos 2 años. Toca uno para ver el reporte completo.</p>`;
+    c.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => { enJuegoFiltro = b.dataset.f; pinta(); }));
+    c.querySelectorAll(".setup").forEach((el) => el.addEventListener("click", () => {
+      estado.rep = { ...estado.rep, simbolo: el.dataset.s, reporte: el.dataset.r };
+      irTab("reportes");
+    }));
+  };
+  pinta();
+}
+
+// ===================== REPORTES =====================
+const REPORTES = [
+  ["gap_fill", "Gap fill"], ["rango_previo", "Rango del día previo"], ["dia_interior", "Día interior"],
+  ["apertura_fuera", "Apertura fuera del rango"], ["alto_bajo_semana", "Máx./mín. semanal por día"], ["rango_diario", "Rango diario (ADR)"]];
+const PERIODOS = [["3M", 92], ["6M", 183], ["1A", 365], ["2A", 730], ["5A", 1826], ["10A", 3650]];
+
+async function verReportes() {
+  $("#titulo").textContent = "Reportes";
+  if (!estado.activos.length) { try { estado.activos = await rpc("app_activos"); } catch (e) { return mostrarError(e); } }
+  const r = estado.rep;
+  $("#contenido").innerHTML = `
+    <div class="chips">${REPORTES.map(([k, t]) => `<button class="chip ${r.reporte === k ? "on" : ""}" data-r="${k}">${t}</button>`).join("")}</div>
+    <select id="sel-activo">${estado.activos.map((a) => `<option value="${esc(a.simbolo)}" ${a.simbolo === r.simbolo ? "selected" : ""}>${esc(nombreCorto(a.simbolo))} — ${esc(a.nombre)}</option>`).join("")}</select>
+    <div class="seg" id="seg-per">${PERIODOS.map(([t, d]) => `<button data-d="${d}" class="${r.dias === d ? "on" : ""}">${t}</button>`).join("")}</div>
+    <div id="rep"><div class="vacio">Calculando…</div></div>`;
+  document.querySelectorAll("[data-r]").forEach((b) => b.addEventListener("click", () => { estado.rep.reporte = b.dataset.r; verReportes(); }));
+  $("#sel-activo").addEventListener("change", (e) => { estado.rep.simbolo = e.target.value; cargarReporte(); });
+  document.querySelectorAll("#seg-per button").forEach((b) => b.addEventListener("click", () => {
+    estado.rep.dias = Number(b.dataset.d);
+    document.querySelectorAll("#seg-per button").forEach((x) => x.classList.toggle("on", x === b));
+    cargarReporte();
+  }));
+  document.querySelector(".chip.on")?.scrollIntoView({ inline: "center", block: "nearest" });
+  cargarReporte();
+}
+
+async function cargarReporte() {
+  const el = $("#rep"), r = estado.rep;
+  el.style.opacity = .5;
+  let j;
+  try { j = await rpc("app_reporte", { p_simbolo: r.simbolo, p_reporte: r.reporte, p_dias: r.dias }); }
+  catch (e) { el.style.opacity = 1; el.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
+  el.style.opacity = 1;
+  const kpi = (k) => k ? `<div class="k"><div class="v" style="${k.pct == null ? "font-size:19px" : ""}">${k.pct != null ? Number(k.pct).toFixed(1) + "%" : esc(k.valor ?? "—")}</div>
+      <div class="l">${esc(k.label)}${k.n != null && k.n !== "" ? ` · ${k.n} casos` : ""}${k.nota ? `<br>${esc(k.nota)}` : ""}</div></div>` : "";
+  const grupo = (g) => {
+    const items = g.items || [];
+    const max = g.unidad === "valor" ? Math.max(...items.map((i) => +i.valor || 0), 0.0001) : 100;
+    return `<div class="card"><h3>${esc(g.titulo)}</h3>${items.map((i) => {
+      const v = g.unidad === "valor" ? +i.valor : +i.pct;
+      return `<div class="hbar"><span class="lbl">${esc(i.label)}</span><span class="t"><i style="width:${Math.max(0, Math.min(100, (v / max) * 100))}%"></i></span>
+        <span class="v">${isNaN(v) ? "—" : v.toFixed(g.unidad === "valor" ? 2 : 0) + "%"}</span></div>`;
+    }).join("")}<div class="nota">${items.map((i) => `${esc(i.label)}: ${i.n}`).join(" · ")} casos</div></div>`;
+  };
+  const rec = j.recientes || { cols: [], filas: [] };
+  el.innerHTML = `
+    <div class="card" style="padding:12px 14px"><b>${esc(j.titulo)}</b> <span class="tag">${esc(nombreCorto(j.simbolo))}</span>
+      <div class="nota" style="margin-top:4px">${esc(j.descripcion)}</div>
+      <div class="nota" style="margin-top:6px">${esc(j.desde)} → ${esc(j.hasta)} · ${j.n} casos</div></div>
+    ${j.reporte === "gap_fill" && /=X$|-USD$|=F$/.test(j.simbolo) ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Este mercado cotiza casi 24 horas: la apertura diaria casi coincide con el cierre anterior, así que el gap fill no es significativo aquí. Úsalo sobre todo en acciones y ETF.</div>` : ""}
+    <div class="kpis">${(j.kpis || []).map(kpi).join("")}</div>
+    ${(j.grupos || []).map(grupo).join("")}
+    <div class="card"><h3>Casos recientes</h3><table class="tabla">
+      <tr>${rec.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>
+      ${(rec.filas || []).map((f) => `<tr>${f.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</table></div>
+    <p class="nota">Frecuencias históricas sobre velas diarias. No son garantías ni recomendaciones de inversión.</p>`;
+}
+
+// ===================== SEÑALES =====================
+async function verSenales() {
+  $("#titulo").textContent = "Señales";
+  const c = $("#contenido");
+  c.innerHTML = `<div class="vacio">Cargando…</div>`;
+  let filas;
+  try { filas = await rpc("app_senales"); } catch (e) { return mostrarError(e); }
+  if (!filas.length) {
+    c.innerHTML = `<div class="card"><h3>Todavía no hay señales</h3><p class="nota">Las señales las genera el motor de probabilidades (Agente 4)
+      cuando se ejecuta. Mientras tanto, cada activo ya muestra sus probabilidades históricas en su pantalla de detalle (toca un mercado).</p></div>`;
+    return;
+  }
+  const EV = { cierra_arriba_1d: "Cierra arriba mañana", sube_2pct_5d: "Sube ≥2% en 5 días", baja_2pct_5d: "Baja ≥2% en 5 días", sube_5pct_20d: "Sube ≥5% en 20 días", baja_5pct_20d: "Baja ≥5% en 20 días" };
+  c.innerHTML = `<div class="lista">${filas.map((f) => `<div class="fila">
+      <div><div class="sim">${esc(nombreCorto(f.simbolo))} · ${esc(EV[f.evento] || f.evento)}</div>
+      <div class="nom">${esc(f.metodo === "analogos_historicos" ? "casos parecidos" : "modelo")} · ${f.muestras} casos · confianza ${esc(f.confianza)}</div></div>
+      <div class="der"><div class="px">${(f.probabilidad * 100).toFixed(1)}%</div>
+      <span class="pill ${f.ventaja >= 0 ? "up" : "down"}">${f.ventaja >= 0 ? "+" : ""}${(f.ventaja * 100).toFixed(1)} pts</span></div></div>`).join("")}</div>
+    <p class="nota" style="margin-top:10px">“pts” = diferencia frente a la frecuencia normal del evento. Calculado el ${esc(filas[0].fecha)}.</p>`;
+}
+
+// ===================== ESTADO =====================
+async function verEstado() {
+  $("#titulo").textContent = "Estado";
+  const c = $("#contenido");
+  c.innerHTML = `<div class="vacio">Cargando…</div>`;
+  let e;
+  try { e = await rpc("app_estado"); } catch (err) { return mostrarError(err); }
+  const { data: { user } } = await db.auth.getUser();
+  const fh = (t) => t ? new Date(t).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" }) : "—";
+  c.innerHTML = `
+    <div class="card"><div class="grid3">
+      <div class="kpi"><span>Activos</span><b>${e.activos}</b></div>
+      <div class="kpi"><span>Registros</span><b>${Number(e.registros).toLocaleString("es-CR")}</b></div>
+      <div class="kpi"><span>Incidencias</span><b class="${e.incidencias_abiertas ? "down" : "up"}">${e.incidencias_abiertas}</b></div>
+    </div>
+    <p class="nota" style="margin:10px 0 0">Último cierre diario: <b>${esc(e.ultima_fecha)}</b> · Último precio de 5 min: <b>${fh(e.ultimo_intradia)}</b></p></div>
+    <div class="card"><h3>Agentes</h3>${(e.agentes || []).map((a) => `
+      <div class="prob"><b>${esc(a.agente)}</b><b class="${a.estado === "ok" ? "up" : a.estado === "error" ? "down" : ""}">${esc(a.estado)}</b>
+      <span class="nota" style="grid-column:1/-1">${fh(a.inicio)} · ${a.filas ?? 0} filas</span></div>`).join("") || '<div class="nota">Sin ejecuciones.</div>'}</div>
+    <div class="card"><div class="nota">Sesión: ${esc(user?.email)}</div>
+      <button class="primario" style="background:var(--panel2);color:var(--txt)" onclick="salir()">Cerrar sesión</button></div>`;
+}
+
+// ===================== ARRANQUE =====================
+db.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") verLogin(); });
+window.addEventListener("resize", () => estado.charts.forEach((c) => { try { c.applyOptions({ width: c.chartElement().parentElement.clientWidth }); } catch {} }));
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+iniciar();
+</script>
+</body>
+</html>
