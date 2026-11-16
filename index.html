@@ -507,7 +507,16 @@ let enviando = false;
 async function verConsultas() {
   $("#titulo").textContent = "Consultas";
   const c = $("#contenido");
-  c.innerHTML = `<div id="hilo"></div><div class="grupo">Consultas guardadas</div><div id="guardadas"><div class="vacio">Cargando…</div></div>`;
+  if (!estado.activos.length) { try { estado.activos = await rpc("app_activos"); } catch {} }
+  if (!estado.activos.some((a) => a.simbolo === activoConsulta)) activoConsulta = estado.activos[0]?.simbolo || "SPY";
+  c.innerHTML = `<div id="hilo"></div><div class="grupo">Consultas guardadas</div>
+    <select id="sel-activo-q" aria-label="Activo">${estado.activos.map((a) => `<option value="${esc(a.simbolo)}" ${a.simbolo === activoConsulta ? "selected" : ""}>${esc(nombreCorto(a.simbolo))} — ${esc(a.nombre)}</option>`).join("")}</select>
+    <div id="guardadas"><div class="vacio">Cargando…</div></div>`;
+  $("#sel-activo-q").addEventListener("change", (e) => {
+    activoConsulta = e.target.value;
+    try { localStorage.setItem("activoConsulta", activoConsulta); } catch {}
+    Object.keys(cacheConsultas).forEach((id) => { const cont = $(`#g-${id}`); if (cont && !cont.classList.contains("oculto")) pintarGuardada(Number(id)); });
+  });
   pintarHilo();
   if (!CHAT_EN_APP) { document.body.classList.remove("con-chat"); cargarGuardadas(); return; }
   // caja de chat fija sobre la barra inferior
@@ -599,10 +608,18 @@ async function abrirGuardada(id, forzar) {
   if (!forzar && !cont.classList.contains("oculto")) { cont.classList.add("oculto"); return; }
   cont.classList.remove("oculto");
   cont.innerHTML = `<div class="vacio pensando">Consultando datos actuales</div>`;
-  let q;
-  try { q = await rpc("app_consulta_ejecutar", { p_id: id }); }
+  try { cacheConsultas[id] = await rpc("app_consulta_ejecutar", { p_id: id }); }
   catch (e) { cont.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
-  cont.innerHTML = cuerpoConsulta(q, `g${id}`, true) + `
+  pintarGuardada(id);
+}
+
+// Dibuja una consulta guardada filtrada al activo seleccionado (sin volver a consultar la base)
+function pintarGuardada(id) {
+  const cont = $(`#g-${id}`), q0 = cacheConsultas[id];
+  if (!cont || !q0) return;
+  const q = filtrarPorActivo(q0);
+  cont.innerHTML = (q.filtrada ? `<div class="nota" style="margin-bottom:6px">Activo: <b>${esc(nombreCorto(activoConsulta))}</b></div>` : "")
+    + cuerpoConsulta(q, `g${id}`, true) + `
     <div class="cq-acc"><button data-act="act">↻ Actualizar</button><button data-act="del" style="color:var(--down)">Eliminar</button></div>`;
   dibujarVisual(q, `g${id}`);
   cont.querySelector('[data-act="act"]').addEventListener("click", () => abrirGuardada(id, true));
@@ -636,6 +653,19 @@ function cuerpoConsulta(q, clave, sinCabecera) {
       ${q.sql ? `<pre class="nota" style="white-space:pre-wrap;background:var(--panel2);padding:8px;border-radius:8px;margin-top:8px">${esc(q.sql)}</pre>` : ""}
     </details></div>`;
 }
+// Filtro por activo: si la consulta tiene columna "activo" (o visual.filtro), solo se muestra el seleccionado
+let activoConsulta = (() => { try { return localStorage.getItem("activoConsulta") || "SPY"; } catch { return "SPY"; } })();
+const cacheConsultas = {};
+function filtrarPorActivo(q) {
+  const filas = q.filas || [];
+  const col = q.visual?.filtro || "activo";
+  if (!filas.length || !(col in filas[0])) return q;
+  const sel = filas.filter((f) => String(f[col]) === activoConsulta);
+  return { ...q, filtrada: true,
+    filas: sel.map((f) => { const g = { ...f }; delete g[col]; return g; }),
+    visual: { ...q.visual, columnas: (q.visual?.columnas || []).filter((c) => c !== col), x: q.visual?.x === col ? undefined : q.visual?.x } };
+}
+
 // orden de columnas: el de visual.columnas si existe (jsonb no conserva el orden de las claves)
 function columnasDe(q) {
   const f = (q.filas || [])[0]; if (!f) return [];
@@ -648,7 +678,23 @@ const fmtValor = (v, pct) => v == null || isNaN(v) ? "—" : Number(v).toLocaleS
 function dibujarVisual(q, clave) {
   const el = document.getElementById(`vis-${clave}`); if (!el) return;
   const filas = q.filas || [], v = q.visual || { tipo: "tabla" };
-  if (!filas.length) { el.innerHTML = `<div class="vacio nota">La consulta no devolvió filas.</div>`; return; }
+  if (!filas.length) { el.innerHTML = `<div class="vacio nota">${q.filtrada ? "No hay datos de este activo en la consulta." : "La consulta no devolvió filas."}</div>`; return; }
+  // una sola fila con varias columnas numéricas: cada columna pasa a ser una barra / una línea de la lista
+  if (filas.length === 1 && (v.tipo === "barras" || v.tipo === "tabla")) {
+    const f = filas[0], cs = columnasDe(q);
+    const nums = (Array.isArray(v.y) && v.y.length ? v.y : cs).filter((c) => cs.includes(c) && f[c] != null && !isNaN(Number(f[c])));
+    if (v.tipo === "barras" && nums.length > 1) {
+      const filasP = nums.map((c) => ({ categoria: c, valor: f[c] }));
+      const resto = cs.filter((c) => !nums.includes(c));
+      dibujarVisual({ ...q, filas: filasP, visual: { tipo: "barras", x: "categoria", y: ["valor"], formato: v.formato, columnas: ["categoria", "valor"] } }, clave);
+      if (resto.length) el.insertAdjacentHTML("beforeend", `<div class="nota" style="margin-top:6px">${resto.map((c) => `${esc(c)}: <b>${esc(fmtCelda(f[c]))}</b>`).join(" · ")}</div>`);
+      return;
+    }
+    if (v.tipo === "tabla") {
+      el.innerHTML = `<table class="tabla">${cs.map((c) => `<tr><td>${esc(c)}</td><td><b>${esc(fmtCelda(f[c]))}</b></td></tr>`).join("")}</table>`;
+      return;
+    }
+  }
   const cols = columnasDe(q);
   const esNum = (c) => filas.every((f) => f[c] == null || !isNaN(Number(f[c])));
   const x = cols.includes(v.x) ? v.x : cols.find((c) => !esNum(c)) || cols[0];
