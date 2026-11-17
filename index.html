@@ -119,6 +119,12 @@
   .tabla-scroll .tabla td,.tabla-scroll .tabla th{white-space:nowrap;padding:6px 8px}
   .pensando::after{content:"";display:inline-block;width:1em;animation:puntos 1.2s steps(4) infinite}
   @keyframes puntos{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+  /* ---- En vivo (Fase 3) ---- */
+  .vivo{padding:12px 14px} .vivo.en_juego{border-color:var(--acc)} .vivo.completado{opacity:.75}
+  .vivo-cab{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+  .vivo-cuerpo{display:flex;align-items:center;gap:10px;margin-bottom:4px} .vivo-cuerpo>div:first-child{flex:1}
+  .sesgo-barra{height:14px;border-radius:7px;background:var(--down);overflow:hidden} .sesgo-barra i{display:block;height:100%;background:var(--up)}
+  .sesgo-txt{display:flex;justify-content:space-between;align-items:baseline;margin-top:6px;font-size:18px}
   /* ---- Reportes estilo Edgeful ---- */
   .ajustes summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;gap:2px}
   .ajustes summary::-webkit-details-marker{display:none}
@@ -259,6 +265,7 @@ $("#b-atras").addEventListener("click", () => irTab(estado.volverA || "mercados"
 $("#b-refrescar").addEventListener("click", () => estado.detalle ? verDetalle(estado.detalle) : irTab(estado.tab));
 
 function irTab(tab) {
+  clearInterval(estado.timer);
   estado.tab = tab; estado.detalle = null; limpiarGraficos();
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   $("#b-atras").classList.add("oculto");
@@ -407,6 +414,152 @@ async function cargarIntradia(sim) {
 }
 
 
+// ===================== EN JUEGO EN VIVO (Fase 3) =====================
+// Velas de 5 min que el recolector guarda cada 5 minutos (~15 min de retraso de Yahoo).
+// Secciones como Edgeful: en juego · formándose · completado, y barra de sesgo diario.
+let enJuegoModo = "vivo";
+const segModoHtml = () => `<div class="seg" id="seg-modo">${[["vivo", "En vivo (hoy)"], ["diario", "Última vela diaria"]].map(([k, t]) =>
+  `<button data-modo="${k}" class="${enJuegoModo === k ? "on" : ""}">${t}</button>`).join("")}</div>`;
+function activarSegModo() {
+  document.querySelectorAll("#seg-modo button").forEach((b) => b.addEventListener("click", () => { enJuegoModo = b.dataset.modo; verEnJuego(); }));
+}
+async function verEnJuego() {
+  clearInterval(estado.timer);
+  if (enJuegoModo === "vivo") return verEnVivo();
+  return verEnJuegoDiario();
+}
+
+async function verEnVivo(silencioso) {
+  $("#titulo").textContent = "En juego";
+  const c = $("#contenido");
+  if (!silencioso) c.innerHTML = segModoHtml() + `<div class="vacio">Cargando…</div>`;
+  let d;
+  try { d = await rpc("app_en_vivo"); } catch (e) { if (!silencioso) mostrarError(e); return; }
+  if (estado.tab !== "enjuego" || enJuegoModo !== "vivo") return;
+  const activos = d.activos || [];
+  const pinta = () => {
+    const tipos = [...new Set(activos.map((a) => a.tipo))];
+    const chips = ["todos", ...tipos].map((t) => `<button class="chip ${enJuegoFiltro === t ? "on" : ""}" data-f="${t}">${t === "todos" ? "Todos" : TIPOS[t] || t}</button>`).join("");
+    const sel = activos.filter((a) => enJuegoFiltro === "todos" || a.tipo === enJuegoFiltro);
+    // sesgo diario: promedio del sesgo de cada activo (vela de apertura, ruptura del IB, IB por rechazo, rango previo)
+    const conSesgo = sel.filter((a) => a.sesgo_alcista != null);
+    const sesgo = conSesgo.length ? conSesgo.reduce((s, a) => s + Number(a.sesgo_alcista), 0) / conSesgo.length : null;
+    const filas = sel.flatMap((a) => (a.setups || []).map((s) => ({ ...s, a })));
+    const pasa = (s) => s.estado === "formandose" || ((s.prob ?? 0) >= enJuegoMin && (enJuegoSesgo === "todos" || s.sesgo === enJuegoSesgo));
+    const seccion = (k, t, nota) => {
+      const fs = filas.filter((s) => s.estado === k && pasa(s)).sort((x, y) => (y.prob ?? -1) - (x.prob ?? -1));
+      return `<div class="grupo">${t} <span class="mut">(${fs.length})</span></div>${nota ? `<div class="nota" style="margin:-2px 2px 8px">${nota}</div>` : ""}
+        ${fs.map((s) => `<div class="card vivo ${k}" data-s="${esc(s.a.simbolo)}" data-r="${esc(s.reporte)}">
+          <div class="vivo-cab"><b>${esc(nombreCorto(s.a.simbolo))}</b> <span class="nota">${esc(nombreRep(s.reporte))}</span>
+            <span class="der px">${s.a.precio != null ? fmtPx(s.a.simbolo, s.a.precio) : ""} <span class="nota">${esc(s.a.hora || "")}</span></span></div>
+          <div class="vivo-cuerpo"><div><b>${esc(s.setup)}</b><div class="nota">${esc(s.detalle || "")}${s.evento ? " · " + esc(s.evento) : ""}</div></div>
+            ${s.prob != null ? `<div class="ej-pct ${s.prob >= 50 ? "up" : "down"}" style="font-size:30px">${Number(s.prob).toFixed(0)}%</div>` : ""}</div>
+          <div class="nota">${s.sesgo !== "neutral" ? `Sesgo <b class="${s.sesgo === "largo" ? "up" : "down"}">${s.sesgo}</b>` : "Sin sesgo"}${s.n != null ? ` · ${s.n} casos` : ""}${s.objetivo != null ? ` · objetivo ${fmtPx(s.a.simbolo, s.objetivo)}` : ""}</div>
+        </div>`).join("") || `<div class="vacio nota" style="padding:12px">Nada en esta sección.</div>`}`;
+    };
+    const barra = sesgo == null ? `<div class="nota">Sin señales todavía: el sesgo aparece cuando se forma la primera hora de la sesión.</div>`
+      : `<div class="sesgo-barra"><i style="width:${sesgo}%"></i></div>
+         <div class="sesgo-txt"><b class="${sesgo >= 50 ? "up" : "down"}">${sesgo >= 50 ? sesgo.toFixed(0) + "% alcista" : (100 - sesgo).toFixed(0) + "% bajista"}</b>
+         <span class="nota">${conSesgo.length} activo${conSesgo.length === 1 ? "" : "s"}</span></div>
+         <div class="chips" style="margin-top:8px">${conSesgo.sort((x, y) => y.sesgo_alcista - x.sesgo_alcista).map((a) =>
+           `<span class="chip" style="color:${a.sesgo_alcista >= 50 ? "var(--up)" : "var(--down)"}">${esc(nombreCorto(a.simbolo))} ${Number(a.sesgo_alcista).toFixed(0)}%</span>`).join("")}</div>`;
+    const hora = new Date(d.generado).toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" });
+    c.innerHTML = `${segModoHtml()}<div class="chips">${chips}</div>
+      <div class="card"><h3>Sesgo diario</h3>${barra}
+        <div class="nota" style="margin-top:6px">Promedio de vela de apertura, ruptura del IB, IB por rechazo y rango de la sesión previa. Es una tendencia histórica, no una garantía.</div></div>
+      <div class="card" style="padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:10px"><span class="nota" style="flex:none">Probabilidad mínima</span>
+          <input id="rng-min" type="range" min="0" max="90" step="5" value="${enJuegoMin}" style="flex:1;margin:0;padding:0;background:none;border:0">
+          <b style="width:44px;text-align:right">${enJuegoMin}%</b></div>
+        <div class="seg" style="margin:8px 0 0">${[["todos", "Todos"], ["largo", "Largo"], ["corto", "Corto"]].map(([k, t]) =>
+          `<button data-sg="${k}" class="${enJuegoSesgo === k ? "on" : ""}">${t}</button>`).join("")}</div></div>
+      ${seccion("en_juego", "En juego", "Lo que todavía puede pasar hoy, de mayor a menor probabilidad.")}
+      ${seccion("formandose", "Formándose", "Reportes que necesitan más tiempo de sesión (ORB, vela de apertura, IB).")}
+      ${seccion("completado", "Completado", "Ya ocurrió o la sesión cerró.")}
+      <p class="nota">Velas de 5 min con ~15 min de retraso (Yahoo). Actualizado ${hora}; se refresca solo cada minuto.
+        Sesiones: ${[...new Set(sel.map((a) => a.sesion))].join(" · ")} (hora de Nueva York).</p>`;
+    activarSegModo();
+    c.querySelectorAll(".chip[data-f]").forEach((b) => b.addEventListener("click", () => { enJuegoFiltro = b.dataset.f; pinta(); }));
+    c.querySelectorAll("[data-sg]").forEach((b) => b.addEventListener("click", () => { enJuegoSesgo = b.dataset.sg; pinta(); }));
+    $("#rng-min").addEventListener("change", (e) => { enJuegoMin = Number(e.target.value); pinta(); });
+    $("#rng-min").addEventListener("input", (e) => { e.target.nextElementSibling.textContent = e.target.value + "%"; });
+    c.querySelectorAll(".vivo[data-s]").forEach((el) => el.addEventListener("click", () => {
+      const rep = REPORTES.find(([k]) => k === el.dataset.r) ? el.dataset.r : "balance_inicial";
+      estado.rep = { ...estado.rep, simbolo: el.dataset.s, reporte: rep, sub: "estandar" };
+      irTab("reportes");
+    }));
+  };
+  pinta();
+  clearInterval(estado.timer);
+  estado.timer = setInterval(() => { if (estado.tab === "enjuego" && enJuegoModo === "vivo" && !document.hidden) verEnVivo(true); }, 60000);
+}
+
+// ===================== BACKTEST DE ESTRATEGIAS (Fase 3) =====================
+let bt = null;
+function pintarBacktest(el) {
+  bt ??= pref.leer("backtest", { estrategia: "orb", minutos: 15, direccion: "ambos", stop: "opuesto", objetivo: 1, dias: [1, 2, 3, 4, 5], llenado: 1, stop_gap: 1 });
+  const r = estado.rep;
+  const op = (id, opciones, val) => `<div class="seg" id="${id}" style="margin:0">${opciones.map(([v, t]) => `<button data-v="${v}" class="${String(val) === String(v) ? "on" : ""}">${t}</button>`).join("")}</div>`;
+  el.innerHTML = `<div class="card"><h3>Backtest de estrategias</h3>
+      <div class="nota">${esc(nombreCorto(r.simbolo))} · periodo ${(PERIODOS.find(([, d]) => d === r.dias) || ["", ""])[0]} (cámbialos en Ajustes). Resultados en R: 1R = lo que arriesgas por operación.</div>
+      <label class="et">Estrategia</label>${op("bt-est", [["orb", "ORB"], ["ib", "Ruptura del IB"], ["gap", "Gap fill"]], bt.estrategia)}
+      ${bt.estrategia === "orb" ? `<label class="et">Rango de apertura</label>${op("bt-min", [[5, "5 min"], [15, "15 min"], [30, "30 min"], [60, "60 min"]], bt.minutos)}` : ""}
+      <label class="et">Dirección</label>${op("bt-dir", [["ambos", "Ambas"], ["largo", "Solo largos"], ["corto", "Solo cortos"]], bt.direccion)}
+      ${bt.estrategia === "gap" ? `
+        <label class="et">Objetivo (llenado del gap)</label>${op("bt-llen", [[0.5, "50 %"], [1, "100 %"]], bt.llenado)}
+        <label class="et">Stop (veces el gap, del otro lado)</label>${op("bt-sg", [[0.5, "0.5×"], [1, "1×"], [2, "2×"]], bt.stop_gap)}` : `
+        <label class="et">Stop</label>${op("bt-stop", [["opuesto", "Lado opuesto"], ["mitad", "Mitad del rango"]], bt.stop)}
+        <label class="et">Objetivo</label>${op("bt-obj", [[0.5, "0.5R"], [1, "1R"], [1.5, "1.5R"], [2, "2R"], [3, "3R"]], bt.objetivo)}`}
+      <label class="et">Días</label><div class="seg" id="bt-dias" style="margin:0">${[[1, "Lun"], [2, "Mar"], [3, "Mié"], [4, "Jue"], [5, "Vie"]].map(([v, t]) =>
+        `<button data-v="${v}" class="${bt.dias.includes(v) ? "on" : ""}">${t}</button>`).join("")}</div>
+      <button class="primario" id="bt-run">Ejecutar backtest</button></div>
+    <div id="bt-res"></div>`;
+  const guardar = () => pref.guardar("backtest", bt);
+  const unico = (id, campo, num) => document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener("click", () => {
+    bt[campo] = num ? Number(b.dataset.v) : b.dataset.v; guardar(); pintarBacktest(el);
+  }));
+  unico("bt-est", "estrategia"); unico("bt-min", "minutos", true); unico("bt-dir", "direccion"); unico("bt-stop", "stop");
+  unico("bt-obj", "objetivo", true); unico("bt-llen", "llenado", true); unico("bt-sg", "stop_gap", true);
+  document.querySelectorAll("#bt-dias button").forEach((b) => b.addEventListener("click", () => {
+    const v = Number(b.dataset.v); bt.dias = bt.dias.includes(v) ? bt.dias.filter((x) => x !== v) : [...bt.dias, v].sort();
+    if (!bt.dias.length) bt.dias = [v]; guardar(); pintarBacktest(el);
+  }));
+  $("#bt-run").addEventListener("click", () => ejecutarBacktest());
+}
+
+async function ejecutarBacktest() {
+  const caja = $("#bt-res"), r = estado.rep; if (!caja) return;
+  caja.innerHTML = `<div class="vacio pensando">Simulando operaciones</div>`;
+  let j;
+  try {
+    j = await rpc("app_backtest", { p_simbolo: r.simbolo, p_estrategia: bt.estrategia, p_dias: r.dias,
+      p_params: { minutos: bt.minutos, direccion: bt.direccion, stop: bt.stop, objetivo: bt.objetivo, dias: bt.dias, llenado: bt.llenado, stop_gap: bt.stop_gap } });
+  } catch (e) { caja.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
+  ultimoReporte = j; tablaDias = { filtro: "", col: 0, asc: false, mostrar: 25 };
+  const k = j.kpis || [];
+  caja.innerHTML = `
+    <div class="nota" style="margin:2px 2px 8px">${esc(j.titulo)} · ${esc(nombreCorto(j.simbolo))} · ${esc(j.desde ?? "")} → ${esc(j.hasta ?? "")} · ${j.n} operaciones</div>
+    ${j.n > 0 && j.n < 100 ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Muestra pequeña: ${j.n} operaciones. Con pocas operaciones el resultado puede ser suerte.</div>` : ""}
+    <div class="kpis">${k.map((x) => `<div class="k"><div class="v" style="font-size:22px">${x.pct != null ? Number(x.pct).toFixed(1) + "%" : esc(x.valor ?? "—")}</div><div class="l">${esc(x.label)}</div></div>`).join("")}</div>
+    ${j.curva?.length ? `<div class="card"><h3>Curva de resultados (R acumulado)</h3><div id="bt-curva" style="height:220px;margin:0 -6px"></div></div>` : ""}
+    ${(j.grupos || []).filter((g) => g.items).map(grupoHtml).join("")}
+    <div class="card" id="dias"></div>
+    <details class="card"><summary><b>Reglas de la simulación</b></summary><p class="nota" style="margin:8px 0 0">${esc(j.descripcion)}</p>
+      <p class="nota">Resultados del pasado; no garantizan el futuro ni son recomendación de inversión.</p></details>`;
+  if (j.curva?.length) {
+    const box = $("#bt-curva");
+    const ch = LightweightCharts.createChart(box, opcionesGrafico(box, 220));
+    estado.charts.push(ch);
+    const fin = j.curva.at(-1)[1];
+    const s = ch.addBaselineSeries({ baseValue: { type: "price", price: 0 }, lineWidth: 2,
+      topLineColor: "#22c55e", topFillColor1: "#22c55e44", topFillColor2: "#22c55e05",
+      bottomLineColor: "#ef4444", bottomFillColor1: "#ef444405", bottomFillColor2: "#ef444444" });
+    s.setData(j.curva.map(([f, v]) => ({ time: f, value: Number(v) })));
+    ch.timeScale().fitContent();
+  }
+  pintarTablaDias();
+}
+
 // ===================== EN JUEGO (estilo "what's in play") =====================
 const REP_DE_SETUP = { "Gap al alza": "gap_fill", "Gap a la baja": "gap_fill", "Rompió el máximo de ayer": "rango_previo",
   "Rompió el mínimo de ayer": "rango_previo", "Día interior": "dia_interior", "Próxima sesión": "rango_previo" };
@@ -420,7 +573,7 @@ function sesgoDe(f) {
   return "neutral";
 }
 let enJuegoFiltro = "todos", enJuegoMin = 0, enJuegoSesgo = "todos";
-async function verEnJuego() {
+async function verEnJuegoDiario() {
   $("#titulo").textContent = "En juego";
   const c = $("#contenido");
   c.innerHTML = `<div class="vacio">Cargando…</div>`;
@@ -449,7 +602,7 @@ async function verEnJuego() {
           <div class="nota" style="grid-column:1/-1">${esc(f.evento)} · ${f.muestras} casos (2 años)</div></div>`; }).join("")}
       </div>`;
     }).join("");
-    c.innerHTML = `<div class="chips">${chips}</div>
+    c.innerHTML = `${segModoHtml()}<div class="chips">${chips}</div>
       <div class="card" style="padding:10px 14px">
         <div style="display:flex;align-items:center;gap:10px"><span class="nota" style="flex:none">Probabilidad mínima</span>
           <input id="rng-min" type="range" min="0" max="90" step="5" value="${enJuegoMin}" style="flex:1;margin:0;padding:0;background:none;border:0">
@@ -458,6 +611,7 @@ async function verEnJuego() {
           `<button data-sg="${k}" class="${enJuegoSesgo === k ? "on" : ""}">${t}</button>`).join("")}</div></div>
       ${tarjetas || '<div class="vacio">Ningún patrón cumple los filtros.</div>'}
       <p class="nota">Patrones formados en la última vela diaria de cada activo, ordenados de mayor a menor probabilidad histórica (2 años). Toca uno para ver el reporte completo.</p>`;
+    activarSegModo();
     c.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => { enJuegoFiltro = b.dataset.f; pinta(); }));
     c.querySelectorAll("[data-sg]").forEach((b) => b.addEventListener("click", () => { enJuegoSesgo = b.dataset.sg; pinta(); }));
     $("#rng-min").addEventListener("change", (e) => { enJuegoMin = Number(e.target.value); pinta(); });
@@ -483,7 +637,7 @@ const GRUPOS_REP = [
   ["Velas de 5 min", [["orb_5", "ORB 5 min"], ["orb_15", "ORB 15 min"], ["orb_30", "ORB 30 min"],
     ["vela_apertura_15", "Vela de apertura 15 min"], ["vela_apertura_30", "Vela de apertura 30 min"], ["ib_rechazo", "IB por rechazo"]]],
   ["Mercados 24 h", [["sesiones", "Sesiones Asia / Londres / NY"], ["medianoche", "Apertura de medianoche (ICT)"], ["apertura_semanal", "Apertura semanal"]]],
-  ["Herramientas", [["calc_riesgo", "Calculadora de riesgo"]]],
+  ["Herramientas", [["backtest", "Backtest de estrategias"], ["calc_riesgo", "Calculadora de riesgo"]]],
 ];
 const REPORTES = GRUPOS_REP.flatMap(([, rs]) => rs);
 const nombreRep = (k) => (REPORTES.find(([x]) => x === k) || [k, k])[1];
@@ -562,6 +716,7 @@ async function verReportes() {
 async function cargarReporte() {
   const el = $("#rep"), r = estado.rep;
   if (r.reporte === "calc_riesgo") { $("#sel-sub").disabled = true; return pintarCalculadora(el); }
+  if (r.reporte === "backtest") { $("#sel-sub").disabled = true; return pintarBacktest(el); }
   el.style.opacity = .5;
   let j;
   try { j = await rpc("app_reporte", { p_simbolo: r.simbolo, p_reporte: r.reporte, p_dias: r.dias }); }
