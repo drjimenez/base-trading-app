@@ -648,7 +648,7 @@ const GRUPOS_REP = [
     ["apertura_fuera", "Apertura fuera del rango"], ["alto_bajo_semana", "Máx./mín. semanal por día"], ["rango_diario", "Rango diario (ADR)"],
     ["envolventes", "Velas envolventes por R:R"]]],
   ["Sesión / intradía", [["vela_apertura", "Vela de apertura (continuación)"], ["balance_inicial", "Balance inicial (IB): proyección"],
-    ["ib_fibonacci", "IB: proyección Fibonacci tras romper"], ["ib_horas_rango", "IB: horas en rango antes de romper"],
+    ["ib_fibonacci", "IB: proyección Fibonacci tras romper"], ["ib_horas_rango", "IB: horas en rango antes de romper"], ["ib_retroceso", "IB: retroceso al nivel anterior"],
     ["ib_ruptura", "IB: tipo de ruptura y cierre"], ["rango_previo_sesion", "Rango de la sesión previa"], ["gap_sesion", "Gap de sesión y % de llenado"],
     ["pivotes", "Puntos pivote"], ["power_hour", "Power hour"]]],
   ["Velas de 5 min", [["orb_5", "ORB 5 min"], ["orb_15", "ORB 15 min"], ["orb_30", "ORB 30 min"],
@@ -817,7 +817,7 @@ function pintarReporte(j) {
   const resumen = !j.n ? `<div class="card nota">Sin datos para este activo en el periodo. ${esc(j.descripcion || "")}</div>` : `
     <div class="card resumen">
       <div class="nota">${esc(j.titulo)} · ${esc(nombreCorto(j.simbolo))} · ${j.n} casos · ${esc(j.desde ?? "")} → ${esc(j.hasta ?? "")}</div>
-      ${p ? `<div class="ej-fila"><div class="ej-pct ${p.pct >= 50 ? "up" : "down"}">${Number(p.pct).toFixed(0)}%</div>
+      ${p ? `<div class="ej-fila"><div class="ej-pct ${j.resumen ? "" : p.pct >= 50 ? "up" : "down"}" ${j.resumen ? 'style="color:var(--acc)"' : ""}>${Number(p.pct).toFixed(0)}%</div>
         <div><div class="nota">Probabilidad principal</div><b>${esc(p.label)}</b></div></div>` : ""}
       <div class="gr-rep">${graficoBarras(kpis, p)}</div>
       ${u ? `<div class="ult"><div class="nota">Último caso · ${esc(u.fecha)}</div><b>${esc(u.texto)}</b>
