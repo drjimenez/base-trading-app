@@ -146,6 +146,22 @@
   .ap-col i.no{background:var(--panel2);color:var(--mut)} .ap-col i.si{background:var(--acc);color:#04101f}
   .ap-col i span{white-space:nowrap}
   .ap-lbl{font-size:11px;color:var(--mut);text-align:center;margin-top:6px;line-height:1.25}
+  .sel-rep select{margin-bottom:0}
+  .resumen{border-color:var(--acc)}
+  .resumen .ej-fila{gap:14px}
+  .resumen .ej-fila>div:first-child{flex:none}
+  .gr-rep{margin:10px 0 4px}
+  .vbarras{display:flex;gap:8px;align-items:flex-start}
+  .vb{flex:1;min-width:0;display:flex;flex-direction:column;align-items:stretch}
+  .vb-v{text-align:center;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:4px}
+  .vb-col{height:150px;background:var(--panel2);border-radius:8px;display:flex;align-items:flex-end;overflow:hidden}
+  .vb-col i{display:block;width:100%;background:var(--acc);opacity:.55;border-radius:8px 8px 0 0}
+  .vb.prin .vb-col i{opacity:1} .vb.prin .vb-v{color:var(--acc)}
+  .vb-l{font-size:11px;color:var(--mut);text-align:center;margin-top:6px;line-height:1.2;min-height:40px}
+  .hb2{margin:9px 0} .hb2-l{font-size:13px;line-height:1.25} .hb2 .t{height:12px} .hb2:not(.prin) .t i{opacity:.55} .hb2.prin .hb2-l{font-weight:700} .hb2.prin .v{color:var(--acc)}
+  .ult{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+  .expl{margin:10px 0 0}
+  .grupo{margin-top:14px}
   select{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:16px;margin-bottom:10px;-webkit-appearance:none}
 </style>
 </head>
@@ -632,6 +648,7 @@ const GRUPOS_REP = [
     ["apertura_fuera", "Apertura fuera del rango"], ["alto_bajo_semana", "Máx./mín. semanal por día"], ["rango_diario", "Rango diario (ADR)"],
     ["envolventes", "Velas envolventes por R:R"]]],
   ["Sesión / intradía", [["vela_apertura", "Vela de apertura (continuación)"], ["balance_inicial", "Balance inicial (IB): proyección"],
+    ["ib_fibonacci", "IB: proyección Fibonacci tras romper"], ["ib_horas_rango", "IB: horas en rango antes de romper"],
     ["ib_ruptura", "IB: tipo de ruptura y cierre"], ["rango_previo_sesion", "Rango de la sesión previa"], ["gap_sesion", "Gap de sesión y % de llenado"],
     ["pivotes", "Puntos pivote"], ["power_hour", "Power hour"]]],
   ["Velas de 5 min", [["orb_5", "ORB 5 min"], ["orb_15", "ORB 15 min"], ["orb_30", "ORB 30 min"],
@@ -658,27 +675,29 @@ async function verReportes() {
   if (!estado.activos.length) { try { estado.activos = await rpc("app_activos"); } catch (e) { return mostrarError(e); } }
   const r = estado.rep; r.sub ??= "estandar";
   const estrella = (on) => on ? "★" : "☆";
+  // Pantalla tipo resumen: 1) lista de reportes · 2) lista de activos · periodo → resumen con gráfico de barras → detalle plegable
   $("#contenido").innerHTML = `
-    <div class="chips" id="marc">${marcadores.map((k) => `<button class="chip ${r.reporte === k ? "on" : ""}" data-mr="${k}">${esc(nombreRep(k))}</button>`).join("")}
-      ${favoritos.map((s) => `<button class="chip ${r.simbolo === s ? "on" : ""}" data-fs="${esc(s)}">↗ ${esc(nombreCorto(s))}</button>`).join("")}</div>
-    <details class="card ajustes" ${r.abierto ? "open" : ""} id="ajustes"><summary><b>Ajustes del reporte</b>
-      <span class="nota">${esc(nombreRep(r.reporte))} · ${esc(nombreCorto(r.simbolo))} · ${(PERIODOS.find(([, d]) => d === r.dias) || ["", ""])[0]}</span></summary>
-      <label class="et">Plantilla</label>
-      <div class="fila-aj"><select id="sel-pl"><option value="">— Sin plantilla —</option>${plantillas.map((p, i) => `<option value="${i}">${esc(p.nombre)}</option>`).join("")}</select>
-        <button class="btn-ic" id="b-pl-borrar" title="Borrar plantilla">🗑</button></div>
-      <div class="fila-aj" id="pl-nueva"><input id="pl-nombre" placeholder="Nombre de la plantilla" style="margin:0"><button class="btn-ic" id="b-pl-guardar">Guardar</button></div>
-      <label class="et">Reporte</label>
+    <div class="card sel-rep">
+      <label class="et" style="margin-top:0">Reporte</label>
       <div class="fila-aj"><select id="sel-rep">${GRUPOS_REP.map(([g, rs]) => `<optgroup label="${esc(g)}">${rs.map(([k, t]) => `<option value="${k}" ${r.reporte === k ? "selected" : ""}>${esc(t)}</option>`).join("")}</optgroup>`).join("")}</select>
         <button class="btn-ic" id="b-marcar" title="Marcador">${estrella(marcadores.includes(r.reporte))}</button></div>
-      <label class="et">Sub-reporte</label>
-      <select id="sel-sub"><option value="estandar">Estándar</option></select>
       <label class="et">Activo</label>
       <div class="fila-aj"><select id="sel-activo">${estado.activos.map((a) => `<option value="${esc(a.simbolo)}" ${a.simbolo === r.simbolo ? "selected" : ""}>${esc(nombreCorto(a.simbolo))} — ${esc(a.nombre)}</option>`).join("")}</select>
         <button class="btn-ic" id="b-fav" title="Lista de seguimiento">${estrella(favoritos.includes(r.simbolo))}</button></div>
-      <label class="et">Periodo</label>
-      <div class="seg" id="seg-per" style="margin:0">${PERIODOS.map(([t, d]) => `<button data-d="${d}" class="${r.dias === d ? "on" : ""}">${t}</button>`).join("")}</div>
-    </details>
-    <div id="rep"><div class="vacio">Calculando…</div></div>`;
+      <div class="seg" id="seg-per" style="margin:10px 0 0">${PERIODOS.map(([t, d]) => `<button data-d="${d}" class="${r.dias === d ? "on" : ""}">${t}</button>`).join("")}</div>
+    </div>
+    <div id="rep"><div class="vacio">Calculando…</div></div>
+    <details class="card ajustes" ${r.abierto ? "open" : ""} id="ajustes"><summary><b>Más opciones</b> <span class="nota">sub-reporte, plantillas, accesos rápidos</span></summary>
+      <label class="et">Sub-reporte (detalle)</label>
+      <select id="sel-sub"><option value="estandar">Estándar</option></select>
+      <label class="et">Plantilla</label>
+      <div class="fila-aj"><select id="sel-pl"><option value="">— Sin plantilla —</option>${plantillas.map((p, i) => `<option value="${i}">${esc(p.nombre)}</option>`).join("")}</select>
+        <button class="btn-ic" id="b-pl-borrar" title="Borrar plantilla">🗑</button></div>
+      <div class="fila-aj" id="pl-nueva" style="margin-top:8px"><input id="pl-nombre" placeholder="Nombre de la plantilla" style="margin:0"><button class="btn-ic" id="b-pl-guardar">Guardar</button></div>
+      <label class="et">Accesos rápidos</label>
+      <div class="chips" id="marc">${marcadores.map((k) => `<button class="chip ${r.reporte === k ? "on" : ""}" data-mr="${k}">${esc(nombreRep(k))}</button>`).join("")}
+        ${favoritos.map((s) => `<button class="chip ${r.simbolo === s ? "on" : ""}" data-fs="${esc(s)}">↗ ${esc(nombreCorto(s))}</button>`).join("")}</div>
+    </details>`;
   const recargar = () => verReportes();
   document.querySelectorAll("[data-mr]").forEach((b) => b.addEventListener("click", () => { r.reporte = b.dataset.mr; r.sub = "estandar"; recargar(); }));
   document.querySelectorAll("[data-fs]").forEach((b) => b.addEventListener("click", () => { r.simbolo = b.dataset.fs; recargar(); }));
@@ -709,7 +728,6 @@ async function verReportes() {
     const i = $("#sel-pl").value; if (i === "") return;
     plantillas.splice(Number(i), 1); pref.guardar("plantillas", plantillas); r.plantilla = null; recargar();
   });
-  document.querySelector("#marc .chip.on")?.scrollIntoView({ inline: "center", block: "nearest" });
   cargarReporte();
 }
 
@@ -755,45 +773,79 @@ function ultimoCaso(j) {
   }
 }
 
+// Resumen del reporte: probabilidad principal, último caso y explicación corta.
+// Los reportes nuevos traen j.resumen desde Supabase; los demás se derivan del último caso o del primer indicador.
+function resumenDe(j) {
+  if (j.resumen?.principal) return j.resumen;
+  const kpis = (j.kpis || []).filter((k) => k && k.pct != null);
+  const uc = ultimoCaso(j);
+  const principal = uc ? { label: uc.evento, pct: uc.pct, n: uc.n } : kpis.length ? { label: kpis[0].label, pct: kpis[0].pct, n: kpis[0].n } : null;
+  let ultimo = null;
+  if (uc) ultimo = { fecha: uc.fecha, texto: uc.setup, sesgo: uc.sesgo };
+  else {
+    const rec = j.recientes, f = rec?.filas?.[0];
+    if (f) ultimo = { fecha: f[0], texto: rec.cols.slice(1).map((c, i) => `${c}: ${f[i + 1]}`).join(" · ") };
+  }
+  const desc = String(j.descripcion || "");
+  const corta = (desc.match(/^[^.]*\.(\s[^.]*\.)?/) || [desc])[0];
+  return { principal, ultimo, explicacion: corta };
+}
+
+// Gráfico de barras con el % de cada categoría; se resalta la barra de la probabilidad principal
+function graficoBarras(kpis, principal) {
+  if (!kpis.length) return "";
+  const lbl = (s) => String(s).replace(/^Alcanza /, "");
+  const esPrin = (k) => principal && +k.pct === +principal.pct && (k.label === principal.label || String(principal.label).toLowerCase().includes(lbl(k.label).toLowerCase()));
+  const vertical = kpis.length <= 7 && kpis.every((k) => lbl(k.label).length <= 22);
+  if (vertical) return `<div class="vbarras">${kpis.map((k) => `<div class="vb ${esPrin(k) ? "prin" : ""}">
+      <div class="vb-v">${Number(k.pct).toFixed(0)}%</div>
+      <div class="vb-col"><i style="height:${Math.max(1, Math.min(100, k.pct))}%"></i></div>
+      <div class="vb-l">${esc(lbl(k.label))}</div></div>`).join("")}</div>`;
+  return kpis.map((k) => `<div class="hb2 ${esPrin(k) ? "prin" : ""}"><div class="hb2-l">${esc(k.label)}</div>
+      <div class="hbar" style="grid-template-columns:1fr 48px;margin:3px 0 0"><span class="t"><i style="width:${Math.max(0, Math.min(100, k.pct))}%"></i></span><span class="v">${Number(k.pct).toFixed(0)}%</span></div></div>`).join("");
+}
+
 function pintarReporte(j) {
   const el = $("#rep"), r = estado.rep;
   const kpis = (j.kpis || []).filter((k) => k && k.pct != null);
   const otros = (j.kpis || []).filter((k) => k && k.pct == null);
-  const uc = ultimoCaso(j);
-  const tarjetaHoy = uc ? `<div class="card enjuego-rep">
-      <div class="nota">Último caso · ${esc(nombreCorto(j.simbolo))} · ${esc(uc.fecha)}</div>
-      <div class="ej-fila"><div><b>${esc(uc.setup)}</b><div class="nota">${esc(uc.evento)}</div></div>
-        <div class="ej-pct ${uc.pct >= 50 ? "up" : "down"}">${Number(uc.pct).toFixed(0)}%</div></div>
-      <div class="nota">Sesgo: <b class="${uc.sesgo === "largo" ? "up" : uc.sesgo === "corto" ? "down" : ""}">${uc.sesgo}</b> · ${uc.n} casos</div></div>` : "";
-  // gráfico de barras apiladas: % que cumple vs. no cumple, una barra por indicador
-  const corto = (s) => s.length > 34 ? s.slice(0, 32) + "…" : s;
-  const grafico = kpis.length ? `<div class="card"><h3>Gráfico</h3><div class="apiladas">${kpis.map((k) =>
-      `<div class="ap"><div class="ap-col"><i class="no" style="height:${100 - k.pct}%"><span>${(100 - k.pct).toFixed(0)}%</span></i><i class="si" style="height:${k.pct}%"><span>${Number(k.pct).toFixed(0)}%</span></i></div>
-        <div class="ap-lbl">${esc(corto(k.label))}</div></div>`).join("")}</div>
-      <div class="leyenda"><span><i style="background:var(--acc)"></i>se cumple</span><span><i style="background:var(--panel2)"></i>no se cumple</span></div></div>` : "";
-  const tabla = (kpis.length || otros.length) ? `<div class="card"><h3>Resultados</h3><table class="tabla">
+  const rs = resumenDe(j), p = rs.principal, u = rs.ultimo;
+  const avisos = [
+    j.reporte === "gap_fill" && /=X$|-USD$|=F$/.test(j.simbolo) ? `⚠️ Este mercado cotiza casi 24 horas: usa "Gap de sesión" para forex y futuros.` : "",
+    j.n > 0 && j.n < 100 ? `⚠️ Muestra pequeña: ${j.n} casos. Los porcentajes se vuelven más confiables con más días.` : "",
+  ].filter(Boolean);
+  const resumen = !j.n ? `<div class="card nota">Sin datos para este activo en el periodo. ${esc(j.descripcion || "")}</div>` : `
+    <div class="card resumen">
+      <div class="nota">${esc(j.titulo)} · ${esc(nombreCorto(j.simbolo))} · ${j.n} casos · ${esc(j.desde ?? "")} → ${esc(j.hasta ?? "")}</div>
+      ${p ? `<div class="ej-fila"><div class="ej-pct ${p.pct >= 50 ? "up" : "down"}">${Number(p.pct).toFixed(0)}%</div>
+        <div><div class="nota">Probabilidad principal</div><b>${esc(p.label)}</b></div></div>` : ""}
+      <div class="gr-rep">${graficoBarras(kpis, p)}</div>
+      ${u ? `<div class="ult"><div class="nota">Último caso · ${esc(u.fecha)}</div><b>${esc(u.texto)}</b>
+        ${u.sesgo ? ` <span class="tag ${u.sesgo === "largo" ? "up" : u.sesgo === "corto" ? "down" : ""}">${esc(u.sesgo)}</span>` : ""}</div>` : ""}
+      ${rs.explicacion ? `<p class="nota expl">💡 ${esc(rs.explicacion)}</p>` : ""}
+      ${avisos.map((a) => `<p class="nota" style="color:var(--warn);margin:6px 0 0">${esc(a)}</p>`).join("")}
+    </div>`;
+  const tabla = (kpis.length || otros.length) ? `<h3>Resultados</h3><table class="tabla">
       <tr><th>Categoría</th><th>Frecuencia</th><th>%</th></tr>
       ${kpis.map((k) => `<tr><td>${esc(k.label)}</td><td>${Math.round(k.pct * k.n / 100)} de ${k.n}</td><td><b>${Number(k.pct).toFixed(1)}%</b></td></tr>`).join("")}
-      ${otros.map((k) => `<tr><td>${esc(k.label)}${k.nota ? `<div class="nota">${esc(k.nota)}</div>` : ""}</td><td>${k.n ?? ""}</td><td><b>${esc(k.valor ?? "—")}</b></td></tr>`).join("")}</table></div>` : "";
+      ${otros.map((k) => `<tr><td>${esc(k.label)}${k.nota ? `<div class="nota">${esc(k.nota)}</div>` : ""}</td><td>${k.n ?? ""}</td><td><b>${esc(k.valor ?? "—")}</b></td></tr>`).join("")}</table>` : "";
   const grupos = (j.grupos || []).filter((g, i) => r.sub === "estandar" || String(i) === String(r.sub));
-  el.innerHTML = `
-    <div class="nota" style="margin:2px 2px 8px">${esc(j.titulo)} · ${esc(nombreCorto(j.simbolo))} · ${esc(j.desde ?? "")} → ${esc(j.hasta ?? "")} · ${j.n} casos</div>
-    ${j.reporte === "gap_fill" && /=X$|-USD$|=F$/.test(j.simbolo) ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Este mercado cotiza casi 24 horas: la apertura diaria casi coincide con el cierre anterior. Usa "Gap de sesión" para forex y futuros.</div>` : ""}
-    ${j.nota_ib ? `<div class="card nota">ℹ️ ${esc(j.nota_ib)}</div>` : ""}
-    ${!j.n ? `<div class="card nota">${esc(j.descripcion)}</div>` : ""}
-    ${j.n > 0 && j.n < 100 ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Muestra pequeña: ${j.n} días. Este reporte usa velas de 5 min, que la base acumula día a día; los porcentajes se vuelven más confiables con más casos.</div>` : ""}
-    ${tarjetaHoy}${grafico}${tabla}
-    ${grupos.map(grupoHtml).join("")}
-    <div class="card" id="dias"></div>
-    <details class="card"><summary><b>¿Qué mide este reporte?</b></summary><p class="nota" style="margin:8px 0 0">${esc(j.descripcion)}</p>
-      <p class="nota">Frecuencias históricas. No son garantías ni recomendaciones de inversión.</p></details>`;
+  el.innerHTML = `${resumen}
+    ${j.n ? `<details class="card" id="det" ${r.detalle ? "open" : ""}><summary><b>Ver detalle</b> <span class="nota">resultados, desgloses y todos los días</span></summary>
+      <div style="margin-top:10px">${tabla}</div>
+      ${grupos.map(grupoHtml).join("")}
+      <div id="dias"></div>
+      <p class="nota" style="margin-top:10px">${esc(j.descripcion)}</p>
+      ${j.nota_ib ? `<p class="nota">ℹ️ ${esc(j.nota_ib)}</p>` : ""}
+      <p class="nota">Frecuencias históricas. No son garantías ni recomendaciones de inversión.</p></details>` : ""}`;
+  $("#det")?.addEventListener("toggle", (e) => { r.detalle = e.target.open; });
   pintarTablaDias();
 }
 
 function grupoHtml(g) {
   const items = g.items || [];
   const max = g.unidad === "valor" ? Math.max(...items.map((i) => +i.valor || 0), 0.0001) : 100;
-  return `<div class="card"><h3>${esc(g.titulo)}</h3>${items.map((i) => {
+  return `<div class="grupo"><h3>${esc(g.titulo)}</h3>${items.map((i) => {
     const v = g.unidad === "valor" ? +i.valor : +i.pct;
     return `<div class="hbar"><span class="lbl">${esc(i.label)}</span><span class="t"><i style="width:${Math.max(0, Math.min(100, (v / max) * 100))}%"></i></span>
       <span class="v">${isNaN(v) || i.pct == null && g.unidad !== "valor" ? "—" : v.toFixed(g.unidad === "valor" ? 2 : 0) + "%"}</span></div>`;
