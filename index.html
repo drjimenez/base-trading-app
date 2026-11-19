@@ -647,7 +647,7 @@ const GRUPOS_REP = [
   ["Precio diario", [["gap_fill", "Gap fill"], ["rango_previo", "Rango del día previo"], ["dia_interior", "Día interior"],
     ["apertura_fuera", "Apertura fuera del rango"], ["alto_bajo_semana", "Máx./mín. semanal por día"], ["rango_diario", "Rango diario (ADR)"],
     ["envolventes", "Velas envolventes por R:R"]]],
-  ["Sesión / intradía", [["vela_apertura", "Vela de apertura (continuación)"], ["balance_inicial", "Balance inicial (IB): proyección"],
+  ["Sesión / intradía", [["escenarios", "Escenarios de la próxima sesión"], ["vela_apertura", "Vela de apertura (continuación)"], ["balance_inicial", "Balance inicial (IB): proyección"],
     ["ib_fibonacci", "IB: proyección Fibonacci tras romper"], ["ib_horas_rango", "IB: horas en rango antes de romper"], ["ib_retroceso", "IB: retroceso al nivel anterior"],
     ["ib_ruptura", "IB: tipo de ruptura y cierre"], ["rango_previo_sesion", "Rango de la sesión previa"], ["gap_sesion", "Gap de sesión y % de llenado"],
     ["pivotes", "Puntos pivote"], ["power_hour", "Power hour"]]],
@@ -736,6 +736,7 @@ async function cargarReporte() {
   const el = $("#rep"), r = estado.rep;
   if (r.reporte === "calc_riesgo") { $("#sel-sub").disabled = true; return pintarCalculadora(el); }
   if (r.reporte === "backtest") { $("#sel-sub").disabled = true; return pintarBacktest(el); }
+  if (r.reporte === "escenarios") { $("#sel-sub").disabled = true; return pintarEscenarios(el); }
   el.style.opacity = .5;
   let j;
   try { j = await rpc("app_reporte", { p_simbolo: r.simbolo, p_reporte: r.reporte, p_dias: r.dias }); }
@@ -841,6 +842,105 @@ function pintarReporte(j) {
       <p class="nota">Frecuencias históricas. No son garantías ni recomendaciones de inversión.</p></details>` : ""}`;
   $("#det")?.addEventListener("toggle", (e) => { r.detalle = e.target.open; });
   pintarTablaDias();
+}
+
+// ===================== ESCENARIOS DE LA PRÓXIMA SESIÓN =====================
+// Última sesión NY (velas de 30 min) + caminos posibles de la siguiente con su probabilidad histórica.
+// La apertura sale del precio fuera de sesión (activos 24 h) o la indica el usuario (acciones/ETF: p. ej. según NQ/ES).
+const ESC_COLOR = { A: "#2dd4bf", B: "#f97316", C: "#a78bfa" };
+const ESC_DASH = { A: "", B: "6 4", C: "2 4" };
+const NIV_COLOR = { max: "#f59e0b", cierre: "#8a9bb8", min: "#60a5fa", proy: "#2dd4bf", ap: "#e6edf7" };
+
+async function pintarEscenarios(el) {
+  const r = estado.rep; r.gap ??= "";
+  el.innerHTML = `<div class="card">
+      <label class="et" style="margin-top:0">Apertura esperada frente al cierre previo (%)</label>
+      <div class="fila-aj"><input id="esc-gap" type="number" step="0.1" inputmode="decimal" placeholder="Auto (precio fuera de sesión)" value="${esc(r.gap)}" style="margin:0">
+        <button class="btn-ic" id="esc-aplicar">Aplicar</button><button class="btn-ic" id="esc-auto">Auto</button></div>
+      <div class="nota" style="margin-top:6px">En acciones y ETF Yahoo no da precio fuera de sesión: escribe el % que marcan los futuros (NQ/ES), p. ej. 0.7 o −0.5.</div>
+    </div><div id="esc-res"><div class="vacio">Calculando escenarios…</div></div>`;
+  const aplicar = () => { r.gap = $("#esc-gap").value.trim().replace(",", "."); pintarEscenarios(el); };
+  $("#esc-aplicar").addEventListener("click", aplicar);
+  $("#esc-gap").addEventListener("keydown", (e) => { if (e.key === "Enter") aplicar(); });
+  $("#esc-auto").addEventListener("click", () => { r.gap = ""; pintarEscenarios(el); });
+  const caja = $("#esc-res");
+  let j;
+  try { j = await rpc("app_escenarios", { p_simbolo: r.simbolo, p_gap_pct: r.gap === "" || isNaN(Number(r.gap)) ? null : Number(r.gap) }); }
+  catch (e) { caja.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
+  if (!j || j.error) { caja.innerHTML = `<div class="vacio">${esc(j?.error || "Sin datos")}</div>`; return; }
+  const d = j.decimales ?? 2, f = (v) => Number(v).toLocaleString("es-CR", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const gapTxt = `${j.gap_pct > 0 ? "+" : ""}${Number(j.gap_pct).toFixed(2)} %`;
+  caja.innerHTML = `
+    <div class="card resumen">
+      <div class="nota">${esc(nombreCorto(j.simbolo))} · base: sesión NY del ${esc(j.fecha_base)}${j.en_curso ? " · sesión siguiente en curso" : ""}</div>
+      <div class="ej-fila"><div class="ej-pct" style="color:var(--acc);font-size:26px">${gapTxt}</div>
+        <div><div class="nota">Apertura ${j.apertura_supuesta ? "supuesta" : "real"} · ${esc(j.origen_apertura)}</div><b>${f(j.apertura)}</b></div></div>
+      <div class="esc-svg" style="margin:8px -4px 0">${svgEscenarios(j)}</div>
+      <div class="chips" style="margin-top:6px">${j.escenarios.map((s) => `<span class="chip" style="display:flex;align-items:center;gap:6px">
+        <svg width="18" height="6"><line x1="0" x2="18" y1="3" y2="3" stroke="${ESC_COLOR[s.clave]}" stroke-width="2.5" stroke-dasharray="${ESC_DASH[s.clave]}"/></svg>${esc(s.clave)} · ${s.prob ?? "—"} %</span>`).join("")}</div>
+    </div>
+    <div class="card"><h3 style="margin:0 0 6px">Escenarios</h3>
+      ${j.escenarios.map((s) => `<div style="padding:8px 0;border-top:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;gap:8px"><b style="color:${ESC_COLOR[s.clave]}">${esc(s.clave)} · ${esc(s.nombre)}</b>
+          <b>${s.prob ?? "—"} %${s.prob_label ? ` <span class="nota">${esc(s.prob_label)}</span>` : ""}</b></div>
+        <div class="nota" style="margin-top:2px">${esc(s.texto)}</div></div>`).join("")}
+      <p class="nota" style="margin:8px 0 0">Probabilidad = % histórico de sesiones de ${esc(nombreCorto(j.simbolo))} (2 años) en que ocurrió, con una apertura del mismo tipo (${j.n_apertura} casos) o tras días parecidos (${j.n_parecidos} casos). A y B no son excluyentes: puede llenar el gap y aun así cerrar arriba.</p>
+    </div>
+    <details class="card"><summary><b>Niveles clave</b> <span class="nota">precio y probabilidad de toque</span></summary>
+      <table class="tabla" style="margin-top:8px"><tr><th>Nivel</th><th>Precio</th><th>Toque</th></tr>
+      ${j.niveles.map((n) => `<tr><td><span style="display:inline-block;width:10px;height:3px;background:${NIV_COLOR[n.tipo] || "#8a9bb8"};margin-right:6px;vertical-align:middle"></span>${esc(n.nombre)}</td><td>${f(n.precio)}</td><td>${n.prob != null ? n.prob + " %" : "—"}</td></tr>`).join("")}</table>
+      <p class="nota">Recorrido típico desde la apertura (P50): +${j.recorridos.p50_arriba} % / −${j.recorridos.p50_abajo} %; amplio (P75): +${j.recorridos.p75_arriba} % / −${j.recorridos.p75_abajo} %.</p>
+    </details>
+    <p class="nota" style="margin:8px 4px">${esc(j.nota)}</p>`;
+}
+
+function svgEscenarios(j) {
+  const W = 380, H = 300, X0 = 8, X1 = 318, TOP = 22, BOT = 262;
+  const velas = j.velas || [], nv = velas.length, slots = nv + 1 + 13, w = (X1 - X0) / slots;
+  const xs = (i) => X0 + w * (i + 0.5);
+  const precios = [...velas.flatMap((v) => [v[2], v[3]]), ...j.escenarios.flatMap((s) => s.puntos.map((p) => +p[1])), ...j.niveles.map((n) => +n.precio)];
+  let lo = Math.min(...precios), hi = Math.max(...precios); const pad = (hi - lo) * 0.05 || 1; lo -= pad; hi += pad;
+  const y = (p) => TOP + (hi - p) * (BOT - TOP) / (hi - lo);
+  const d = j.decimales ?? 2, fmt = (v) => Number(v).toLocaleString("es-CR", { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: Math.min(d, 5) });
+  const xIni = xs(nv + 1), xFin = xs(slots - 1);
+  const hora = (t) => new Intl.DateTimeFormat("es-CR", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(t * 1000));
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Última sesión y escenarios de la próxima">`;
+  s += `<rect x="${xIni - w * 0.5}" y="${TOP}" width="${X1 - xIni + w * 0.5}" height="${BOT - TOP}" fill="#8a9bb8" fill-opacity=".07"/>`;
+  // niveles con etiquetas a la derecha (separadas para que no se encimen)
+  const nivs = j.niveles.map((n) => ({ ...n, yy: y(+n.precio) })).sort((a, b) => a.yy - b.yy);
+  let ultimo = -99; nivs.forEach((n) => { n.ly = Math.max(n.yy + 4, ultimo + 12); ultimo = n.ly; });
+  nivs.forEach((n) => {
+    const c = NIV_COLOR[n.tipo] || "#8a9bb8", da = n.tipo === "proy" ? "2 3" : n.tipo === "cierre" || n.tipo === "ap" ? "4 3" : "";
+    s += `<line x1="${X0}" x2="${X1 + 4}" y1="${n.yy}" y2="${n.yy}" stroke="${c}" stroke-width="1" stroke-opacity=".85" ${da ? `stroke-dasharray="${da}"` : ""}/>`;
+    s += `<text x="${W - 2}" y="${n.ly}" text-anchor="end" font-size="10.5" fill="${c}">${fmt(n.precio)}</text>`;
+  });
+  // velas de la sesión base
+  velas.forEach((v, i) => {
+    const [, o, h, l, c] = v, col = c >= o ? "#22c55e" : "#ef4444", x = xs(i), bw = Math.max(3, Math.min(8, w * 0.6));
+    const t = y(Math.max(o, c)), b = y(Math.min(o, c));
+    s += `<line x1="${x}" x2="${x}" y1="${y(h)}" y2="${y(l)}" stroke="${col}" stroke-width="1.2"/>`;
+    s += `<rect x="${x - bw / 2}" y="${t}" width="${bw}" height="${Math.max(1, b - t)}" fill="${col}"/>`;
+  });
+  // escenarios
+  const ultimoCierre = velas.length ? velas[nv - 1][4] : j.sesion_base.cierre;
+  s += `<path d="M${xs(nv - 1)},${y(ultimoCierre)} L${xIni},${y(j.apertura)}" stroke="#8a9bb8" stroke-width="1" stroke-dasharray="2 3" fill="none"/>`;
+  [...j.escenarios].reverse().forEach((e) => {
+    const pts = e.puntos.map(([fr, p]) => `${(xIni + (xFin - xIni) * fr).toFixed(1)},${y(+p).toFixed(1)}`);
+    s += `<path d="M${pts.join(" L")}" stroke="${ESC_COLOR[e.clave]}" stroke-width="${e.clave === "A" ? 2.5 : 2}" ${ESC_DASH[e.clave] ? `stroke-dasharray="${ESC_DASH[e.clave]}"` : ""} fill="none" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const [, pf] = e.puntos[e.puntos.length - 1];
+    s += `<text x="${xFin + 6}" y="${y(+pf) + 4}" font-size="11" font-weight="700" fill="${ESC_COLOR[e.clave]}">${e.clave}</text>`;
+  });
+  s += `<circle cx="${xIni}" cy="${y(j.apertura)}" r="4" fill="#e6edf7" stroke="#0b1220" stroke-width="2"/>`;
+  // ejes de tiempo
+  if (nv) {
+    s += `<text x="${xs(0)}" y="${BOT + 14}" font-size="10.5" fill="#8a9bb8" text-anchor="start">${hora(velas[0][0])}</text>`;
+    s += `<text x="${xs(nv - 1)}" y="${BOT + 14}" font-size="10.5" fill="#8a9bb8" text-anchor="end">${hora(velas[nv - 1][0])}</text>`;
+  }
+  s += `<text x="${xIni}" y="${BOT + 14}" font-size="10.5" fill="#8a9bb8">apertura</text><text x="${xFin}" y="${BOT + 14}" font-size="10.5" fill="#8a9bb8" text-anchor="end">cierre</text>`;
+  s += `<text x="${(X0 + xs(nv - 1)) / 2}" y="${TOP - 8}" font-size="11.5" fill="#e6edf7" text-anchor="middle">Sesión ${esc(j.fecha_base)}</text>`;
+  s += `<text x="${(xIni + xFin) / 2}" y="${TOP - 8}" font-size="11.5" fill="#e6edf7" text-anchor="middle">Próxima sesión</text>`;
+  s += `<text x="${X0}" y="${H - 6}" font-size="10" fill="#8a9bb8">Caminos ilustrativos: dirección y niveles, no horarios.</text></svg>`;
+  return s;
 }
 
 function grupoHtml(g) {
