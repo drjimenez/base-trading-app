@@ -1,7 +1,7 @@
 // Service worker: guarda la "cáscara" de la app para que abra rápido.
 // Los datos de Supabase SIEMPRE se piden en vivo (nunca se cachean).
-const VERSION = "trading-v10";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const VERSION = "trading-v11";
+const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png", "./laboratorio.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
