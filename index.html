@@ -13,6 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="laboratorio.js"></script>
 <style>
   :root{
     --bg:#0b1220; --panel:#111a2e; --panel2:#16213a; --line:#22304d; --txt:#e6edf7; --mut:#8a9bb8;
@@ -162,6 +163,13 @@
   .ult{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
   .expl{margin:10px 0 0}
   .grupo{margin-top:14px}
+  .caso-graf{height:300px;margin:8px -4px 6px;border-radius:10px;overflow:hidden}
+  .ef{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  .ef h3{font-size:19px;font-weight:600;line-height:1.3;margin:0 0 10px}
+  .ef p{font-size:14.5px;line-height:1.5;margin:0 0 10px}
+  .ef ul{margin:0 0 12px 18px;padding:0;font-size:14px;line-height:1.6}
+  .ef-panel{margin:10px -8px 12px;border-radius:8px;overflow:hidden}
+  .lab-sel{display:flex;gap:8px;flex-wrap:wrap} .lab-sel select{flex:1 1 220px}
   select{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:16px;margin-bottom:10px;-webkit-appearance:none}
 </style>
 </head>
@@ -655,6 +663,8 @@ const GRUPOS_REP = [
     ["vela_apertura_15", "Vela de apertura 15 min"], ["vela_apertura_30", "Vela de apertura 30 min"], ["ib_rechazo", "IB por rechazo"],
     ["or_falla_15", "Rango 15 min: falsa ruptura"], ["or_falla_20", "Rango 20 min: falsa ruptura"]]],
   ["Mercados 24 h", [["sesiones", "Sesiones Asia / Londres / NY"], ["medianoche", "Apertura de medianoche (ICT)"], ["apertura_semanal", "Apertura semanal"]]],
+  ["Laboratorio (Agente 7)", [["lab_reportes", "Reportes del laboratorio (gráficos)"], ["lab_ejemplos", "Operaciones en gráfico (estilo TradingView)"],
+    ["lab_comparativa", "¿Qué estrategia funciona mejor?"], ["lab_cisd_fvg", "CISD + FVG: backtest"], ["lab_hallazgos", "Lo que aprendió el agente"]]],
   ["Herramientas", [["backtest", "Backtest de estrategias"], ["calc_riesgo", "Calculadora de riesgo"]]],
 ];
 const REPORTES = GRUPOS_REP.flatMap(([, rs]) => rs);
@@ -736,6 +746,8 @@ async function cargarReporte() {
   const el = $("#rep"), r = estado.rep;
   if (r.reporte === "calc_riesgo") { $("#sel-sub").disabled = true; return pintarCalculadora(el); }
   if (r.reporte === "backtest") { $("#sel-sub").disabled = true; return pintarBacktest(el); }
+  if (r.reporte === "lab_reportes") { $("#sel-sub").disabled = true; return pintarLabReportes(el); }
+  if (r.reporte === "lab_ejemplos") { $("#sel-sub").disabled = true; return pintarLabEjemplos(el); }
   el.style.opacity = .5;
   let j;
   try { j = await rpc("app_reporte", { p_simbolo: r.simbolo, p_reporte: r.reporte, p_dias: r.dias }); }
@@ -831,7 +843,11 @@ function pintarReporte(j) {
       ${kpis.map((k) => `<tr><td>${esc(k.label)}</td><td>${Math.round(k.pct * k.n / 100)} de ${k.n}</td><td><b>${Number(k.pct).toFixed(1)}%</b></td></tr>`).join("")}
       ${otros.map((k) => `<tr><td>${esc(k.label)}${k.nota ? `<div class="nota">${esc(k.nota)}</div>` : ""}</td><td>${k.n ?? ""}</td><td><b>${esc(k.valor ?? "—")}</b></td></tr>`).join("")}</table>` : "";
   const grupos = (j.grupos || []).filter((g, i) => r.sub === "estandar" || String(i) === String(r.sub));
-  el.innerHTML = `${resumen}
+  const fechaCaso = (j.recientes?.filas || [])[0]?.[0];
+  const conCaso = j.n && fechaCaso && window.LAB && LAB.soportaCaso(j.reporte);
+  const caso = conCaso ? `<div class="card" id="caso"><div class="nota">Último caso en el gráfico · ${esc(fechaCaso)} · velas estilo TradingView (hora de NY)</div>
+      <div class="caso-graf" id="caso-graf"><div class="vacio">Cargando velas…</div></div><p class="nota" id="caso-txt" style="margin:0"></p></div>` : "";
+  el.innerHTML = `${resumen}${caso}
     ${j.n ? `<details class="card" id="det" ${r.detalle ? "open" : ""}><summary><b>Ver detalle</b> <span class="nota">resultados, desgloses y todos los días</span></summary>
       <div style="margin-top:10px">${tabla}</div>
       ${grupos.map(grupoHtml).join("")}
@@ -841,6 +857,70 @@ function pintarReporte(j) {
       <p class="nota">Frecuencias históricas. No son garantías ni recomendaciones de inversión.</p></details>` : ""}`;
   $("#det")?.addEventListener("toggle", (e) => { r.detalle = e.target.open; });
   pintarTablaDias();
+  if (conCaso) pintarCaso(j, fechaCaso);
+}
+
+// Gráfico del último caso del reporte con sus niveles de referencia (rango de apertura, IB y extensiones, pivotes, día previo…)
+let graficoCaso = null;
+async function pintarCaso(j, fecha) {
+  const caja = $("#caso-graf"); if (!caja) return;
+  try {
+    const d = await rpc("app_velas_caso", { p_simbolo: j.simbolo, p_fecha: fecha });
+    if (ultimoReporte !== j || !$("#caso-graf")) return;
+    const R = LAB.casoReporte(j.reporte, d);
+    if (!R) { $("#caso").remove(); return; }
+    if (graficoCaso) { try { graficoCaso.remove(); } catch {} estado.charts = estado.charts.filter((c) => c !== graficoCaso); }
+    graficoCaso = LAB.dibujar(caja, R); estado.charts.push(graficoCaso);
+    $("#caso-txt").textContent = R.texto + (R.intervalo == 60 ? " (Velas de 60 min: no hay velas de 5 min para ese día.)" : "");
+  } catch (e) { $("#caso")?.remove(); }
+}
+
+// ===================== LABORATORIO (Agente 7) =====================
+async function pintarLabReportes(el) {
+  el.innerHTML = `<div class="vacio">Leyendo resultados del laboratorio…</div>`;
+  let d; try { d = await rpc("app_laboratorio"); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
+  if (!d.filas?.length) { el.innerHTML = `<div class="vacio">El laboratorio todavía no tiene comparativas.</div>`; return; }
+  const R = LAB.construirReportes(d.filas, d.embudo || [], d.horas || []);
+  el.innerHTML = R.map(LAB.efTarjeta).join("") + `<p class="nota">Compara ES y NQ (con datos de TradingView si los cargaste; si no, SPY×10 y QQQ×41). Se recalcula cada noche. Frecuencias históricas, no garantías.</p>`;
+}
+
+let labEj = { lista: [], ops: [], chart: null };
+async function pintarLabEjemplos(el) {
+  el.innerHTML = `<div class="vacio">Cargando…</div>`;
+  let d; try { d = await rpc("app_laboratorio"); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
+  labEj.lista = d.lista || [];
+  if (!labEj.lista.length) { el.innerHTML = `<div class="vacio">El laboratorio todavía no tiene operaciones.</div>`; return; }
+  el.innerHTML = `<div class="card"><div class="lab-sel">
+      <select id="lab-est">${labEj.lista.map((x, i) => `<option value="${i}">${esc(nombreCorto(x.ref))}${x.ref !== x.simbolo ? " · " + esc(x.simbolo) : ""} · ${x.puesto ? "#" + x.puesto + " " : ""}${esc(x.nombre)} · ${x.temporalidad} min · ${x.n} op.</option>`).join("")}</select>
+      <select id="lab-op"></select></div>
+      <div class="caso-graf" id="lab-graf" style="height:340px"></div>
+      <div class="fila-aj" style="justify-content:space-between;margin-top:4px"><button class="btn-ic" id="lab-prev">◀ Anterior</button><button class="btn-ic" id="lab-next">Siguiente ▶</button></div>
+      <p class="nota" id="lab-txt" style="margin:8px 0 0"></p></div>`;
+  $("#lab-est").addEventListener("change", labCargarOps);
+  $("#lab-op").addEventListener("change", labDibujar);
+  $("#lab-prev").addEventListener("click", () => labMover(1)); $("#lab-next").addEventListener("click", () => labMover(-1));
+  labCargarOps();
+}
+function labMover(d) { const s = $("#lab-op"); const i = s.selectedIndex + d; if (i >= 0 && i < s.options.length) { s.selectedIndex = i; labDibujar(); } }
+async function labCargarOps() {
+  const x = labEj.lista[+$("#lab-est").value]; if (!x) return;
+  labEj.ops = await rpc("app_lab_operaciones", { p_corrida: x.id }) || [];
+  $("#lab-op").innerHTML = labEj.ops.map((o, i) => `<option value="${i}">${o.dia} · ${o.lado > 0 ? "Compra" : "Venta"} · ${esc(o.motivo)} · ${(o.r >= 0 ? "+" : "") + Number(o.r).toFixed(2)} R</option>`).join("");
+  const g = labEj.ops.findIndex((o) => o.motivo === "Objetivo"); if (g >= 0) $("#lab-op").selectedIndex = g;
+  labDibujar();
+}
+async function labDibujar() {
+  const x = labEj.lista[+$("#lab-est").value], op = labEj.ops[+$("#lab-op").value]; if (!x || !op) return;
+  const caja = $("#lab-graf"); caja.innerHTML = `<div class="vacio">Cargando velas…</div>`;
+  const v = await rpc("app_lab_velas", { p_corrida: x.id, p_te: op.te, p_tx: op.tx }) || [];
+  const B0 = LAB.makeBars(v.map((r) => ({ t: +r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[5] })), +x.factor || 1);
+  if (B0.o.length < 10) { caja.innerHTML = `<div class="vacio">No hay velas para esta operación.</div>`; return; }
+  const R = LAB.referencias(x, op, B0), tf = +x.temporalidad;
+  R.rango = { from: R.T[Math.max(0, R.iE - (tf >= 60 ? 40 : 60))], to: R.T[Math.min(R.T.length - 1, R.iX + (tf >= 60 ? 10 : 20))] };
+  if (labEj.chart) { try { labEj.chart.remove(); } catch {} estado.charts = estado.charts.filter((c) => c !== labEj.chart); }
+  labEj.chart = LAB.dibujar(caja, R); estado.charts.push(labEj.chart);
+  $("#lab-txt").innerHTML = `<b>${esc(x.nombre)} · ${x.temporalidad} min · ${esc(x.variante)}</b><br>${esc(LAB.EXPLICA[x.estrategia] || "")}<br>
+    ${esc(op.dia)}: ${op.lado > 0 ? "compra" : "venta"} en ${Number(op.entrada).toFixed(2)}, stop ${Number(op.stop).toFixed(2)}, objetivo ${Number(op.objetivo).toFixed(2)} → ${esc(String(op.motivo).toLowerCase())} (${(op.r >= 0 ? "+" : "") + Number(op.r).toFixed(2)} R). ${esc(R.nota || "")}${x.fuente === "yahoo" ? ` Precios de ${esc(x.simbolo)} × ${+x.factor} (aproximación al futuro).` : ""}`;
 }
 
 function grupoHtml(g) {
