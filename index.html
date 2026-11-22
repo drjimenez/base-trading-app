@@ -216,7 +216,7 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSe
 // ===================== UTILIDADES =====================
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const TIPOS = { etf: "ETF e índices", accion: "Acciones", materia_prima: "Materias primas", divisa: "Forex", cripto: "Cripto", indice: "Índices" };
+const TIPOS = { etf: "ETF e índices", accion: "Acciones", materia_prima: "Materias primas", divisa: "Forex", cripto: "Cripto", indice: "Índices", futuro: "Futuros de índices" };
 const decimales = (sim, v) => sim.endsWith("=X") ? (sim.includes("JPY") ? 3 : 5) : Math.abs(v) >= 1000 ? 2 : 2;
 const fmtPx = (sim, v) => v == null ? "—" : Number(v).toLocaleString("es-CR", { minimumFractionDigits: decimales(sim, v), maximumFractionDigits: decimales(sim, v) });
 const fmtPct = (v, d = 2) => v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toLocaleString("es-CR", { minimumFractionDigits: d, maximumFractionDigits: d }) + "%";
