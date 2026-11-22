@@ -170,6 +170,20 @@
   .ef ul{margin:0 0 12px 18px;padding:0;font-size:14px;line-height:1.6}
   .ef-panel{margin:10px -8px 12px;border-radius:8px;overflow:hidden}
   .lab-sel{display:flex;gap:8px;flex-wrap:wrap} .lab-sel select{flex:1 1 220px}
+  .llave .ll-fila{display:grid;grid-template-columns:1fr 64px 58px;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+  .llave .ll-fila .t{height:9px;background:var(--panel2);border-radius:5px;overflow:hidden}
+  .llave .ll-fila .t i{display:block;height:100%;background:var(--acc);border-radius:5px}
+  .llave .ll-fila .v{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+  .llave .ll-fila .v small{display:block;font-weight:400;font-size:10px;color:var(--mut)}
+  .llave .ll-fila.poco{opacity:.5}
+  .llave .poco-tag{opacity:.5}
+  .llave details.ll-nodo>summary{list-style:none;cursor:pointer}
+  .llave details.ll-nodo>summary::-webkit-details-marker{display:none}
+  .llave details.ll-nodo>summary .ll-lbl::before{content:"▸ ";color:var(--mut)}
+  .llave details.ll-nodo[open]>summary .ll-lbl::before{content:"▾ "}
+  .llave details.ll-nodo>summary .ll-lbl{font-weight:600}
+  .llave .ll-hijos{margin-left:10px;padding-left:9px;border-left:1px solid var(--line)}
+  .llave .ll-hoja .ll-lbl{padding-left:12px}
   select{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:16px;margin-bottom:10px;-webkit-appearance:none}
 </style>
 </head>
@@ -662,6 +676,8 @@ const GRUPOS_REP = [
   ["Velas de 5 min", [["orb_5", "ORB 5 min"], ["orb_15", "ORB 15 min"], ["orb_30", "ORB 30 min"],
     ["vela_apertura_15", "Vela de apertura 15 min"], ["vela_apertura_30", "Vela de apertura 30 min"], ["ib_rechazo", "IB por rechazo"],
     ["or_falla_15", "Rango 15 min: falsa ruptura"], ["or_falla_20", "Rango 20 min: falsa ruptura"]]],
+  ["Llave de escenarios", [["llave_ny_15", "Nueva York · rango 15 min"], ["llave_ny_20", "Nueva York · rango 20 min"], ["llave_ny_60", "Nueva York · rango 1 h (2 años)"],
+    ["llave_londres_15", "Londres · rango 15 min"], ["llave_londres_20", "Londres · rango 20 min"], ["llave_londres_60", "Londres · rango 1 h (2 años)"]]],
   ["Mercados 24 h", [["sesiones", "Sesiones Asia / Londres / NY"], ["medianoche", "Apertura de medianoche (ICT)"], ["apertura_semanal", "Apertura semanal"]]],
   ["Laboratorio (Agente 7)", [["lab_reportes", "Reportes del laboratorio (gráficos)"], ["lab_ejemplos", "Operaciones en gráfico (estilo TradingView)"],
     ["lab_comparativa", "¿Qué estrategia funciona mejor?"], ["lab_cisd_fvg", "CISD + FVG: backtest"], ["lab_hallazgos", "Lo que aprendió el agente"]]],
@@ -847,7 +863,7 @@ function pintarReporte(j) {
   const conCaso = j.n && fechaCaso && window.LAB && LAB.soportaCaso(j.reporte);
   const caso = conCaso ? `<div class="card" id="caso"><div class="nota">Último caso en el gráfico · ${esc(fechaCaso)} · velas estilo TradingView (hora de NY)</div>
       <div class="caso-graf" id="caso-graf"><div class="vacio">Cargando velas…</div></div><p class="nota" id="caso-txt" style="margin:0"></p></div>` : "";
-  el.innerHTML = `${resumen}${caso}
+  el.innerHTML = `${resumen}${llaveHtml(j)}${caso}
     ${j.n ? `<details class="card" id="det" ${r.detalle ? "open" : ""}><summary><b>Ver detalle</b> <span class="nota">resultados, desgloses y todos los días</span></summary>
       <div style="margin-top:10px">${tabla}</div>
       ${grupos.map(grupoHtml).join("")}
@@ -858,6 +874,23 @@ function pintarReporte(j) {
   $("#det")?.addEventListener("toggle", (e) => { r.detalle = e.target.open; });
   pintarTablaDias();
   if (conCaso) pintarCaso(j, fechaCaso);
+}
+
+// Llave de escenarios: árbol de ramas con % sobre la rama anterior y número de casos
+function nodoLlave(nd, nivel) {
+  const hijos = nd.hijos || [];
+  const poco = nd.n < 20;
+  const fila = `<div class="ll-fila ${poco ? "poco" : ""}"><span class="ll-lbl">${esc(nd.label)}</span>
+      <span class="t"><i style="width:${Math.max(0, Math.min(100, nd.pct ?? 0))}%"></i></span>
+      <span class="v">${nd.pct == null ? "—" : Number(nd.pct).toFixed(0) + "%"}<small>${nd.k}/${nd.n}</small></span></div>`;
+  if (!hijos.length) return `<div class="ll-hoja">${fila}</div>`;
+  return `<details class="ll-nodo" ${nivel < 2 ? "open" : ""}><summary>${fila}</summary><div class="ll-hijos">${hijos.map((h) => nodoLlave(h, nivel + 1)).join("")}</div></details>`;
+}
+function llaveHtml(j) {
+  if (!j.arbol || !j.n) return "";
+  return `<div class="card llave"><h3>Llave de escenarios</h3>
+    <p class="nota" style="margin:-4px 0 8px">0 = extremo opuesto · 1 = extremo roto · 1.618 / 2 / 3 = extensiones. Cada % es sobre la rama de arriba; <span class="poco-tag">gris</span> = menos de 20 casos. Toca una rama para abrirla o cerrarla.</p>
+    ${nodoLlave(j.arbol, 0)}</div>`;
 }
 
 // Gráfico del último caso del reporte con sus niveles de referencia (rango de apertura, IB y extensiones, pivotes, día previo…)
