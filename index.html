@@ -536,15 +536,22 @@ async function verEnVivo(silencioso) {
 // ===================== BACKTEST DE ESTRATEGIAS (Fase 3) =====================
 let bt = null;
 function pintarBacktest(el) {
-  bt ??= pref.leer("backtest", { estrategia: "orb", minutos: 15, direccion: "ambos", stop: "opuesto", objetivo: 1, dias: [1, 2, 3, 4, 5], llenado: 1, stop_gap: 1 });
+  bt ??= { estrategia: "orb", minutos: 15, direccion: "ambos", stop: "opuesto", objetivo: 1, dias: [1, 2, 3, 4, 5], llenado: 1, stop_gap: 1,
+          intervalo: 5, salida: "objetivo", stop_v: "swing", max_ops: 2, ...pref.leer("backtest", {}) };
+  const ve = bt.estrategia === "vwap_ema";
   const r = estado.rep;
   const op = (id, opciones, val) => `<div class="seg" id="${id}" style="margin:0">${opciones.map(([v, t]) => `<button data-v="${v}" class="${String(val) === String(v) ? "on" : ""}">${t}</button>`).join("")}</div>`;
   el.innerHTML = `<div class="card"><h3>Backtest de estrategias</h3>
       <div class="nota">${esc(nombreCorto(r.simbolo))} · periodo ${(PERIODOS.find(([, d]) => d === r.dias) || ["", ""])[0]} (cámbialos en Ajustes). Resultados en R: 1R = lo que arriesgas por operación.</div>
-      <label class="et">Estrategia</label>${op("bt-est", [["orb", "ORB"], ["ib", "Ruptura del IB"], ["gap", "Gap fill"]], bt.estrategia)}
+      <label class="et">Estrategia</label>${op("bt-est", [["orb", "ORB"], ["ib", "Ruptura IB"], ["gap", "Gap fill"], ["vwap_ema", "VWAP/EMA 9"]], bt.estrategia)}
+      ${ve ? `<label class="et">Velas</label>${op("bt-iv", [[5, "5 min"], [15, "15 min"], [30, "30 min"]], bt.intervalo)}` : ""}
       ${bt.estrategia === "orb" ? `<label class="et">Rango de apertura</label>${op("bt-min", [[5, "5 min"], [15, "15 min"], [30, "30 min"], [60, "60 min"]], bt.minutos)}` : ""}
       <label class="et">Dirección</label>${op("bt-dir", [["ambos", "Ambas"], ["largo", "Solo largos"], ["corto", "Solo cortos"]], bt.direccion)}
-      ${bt.estrategia === "gap" ? `
+      ${ve ? `
+        <label class="et">Salida</label>${op("bt-sal", [["objetivo", "Objetivo en R"], ["cruce", "Cruce contrario"]], bt.salida)}
+        ${bt.salida === "objetivo" ? `<label class="et">Objetivo</label>${op("bt-obj", [[0.5, "0.5R"], [1, "1R"], [1.5, "1.5R"], [2, "2R"], [3, "3R"]], bt.objetivo)}` : ""}
+        <label class="et">Stop</label>${op("bt-sv", [["swing", "Swing 3 velas"], ["atr", "1.5× ATR"]], bt.stop_v)}
+        <label class="et">Máx. operaciones por día</label>${op("bt-mx", [[1, "1"], [2, "2"], [3, "3"]], bt.max_ops)}` : bt.estrategia === "gap" ? `
         <label class="et">Objetivo (llenado del gap)</label>${op("bt-llen", [[0.5, "50 %"], [1, "100 %"]], bt.llenado)}
         <label class="et">Stop (veces el gap, del otro lado)</label>${op("bt-sg", [[0.5, "0.5×"], [1, "1×"], [2, "2×"]], bt.stop_gap)}` : `
         <label class="et">Stop</label>${op("bt-stop", [["opuesto", "Lado opuesto"], ["mitad", "Mitad del rango"]], bt.stop)}
@@ -559,6 +566,7 @@ function pintarBacktest(el) {
   }));
   unico("bt-est", "estrategia"); unico("bt-min", "minutos", true); unico("bt-dir", "direccion"); unico("bt-stop", "stop");
   unico("bt-obj", "objetivo", true); unico("bt-llen", "llenado", true); unico("bt-sg", "stop_gap", true);
+  unico("bt-iv", "intervalo", true); unico("bt-sal", "salida"); unico("bt-sv", "stop_v"); unico("bt-mx", "max_ops", true);
   document.querySelectorAll("#bt-dias button").forEach((b) => b.addEventListener("click", () => {
     const v = Number(b.dataset.v); bt.dias = bt.dias.includes(v) ? bt.dias.filter((x) => x !== v) : [...bt.dias, v].sort();
     if (!bt.dias.length) bt.dias = [v]; guardar(); pintarBacktest(el);
@@ -572,12 +580,15 @@ async function ejecutarBacktest() {
   let j;
   try {
     j = await rpc("app_backtest", { p_simbolo: r.simbolo, p_estrategia: bt.estrategia, p_dias: r.dias,
-      p_params: { minutos: bt.minutos, direccion: bt.direccion, stop: bt.stop, objetivo: bt.objetivo, dias: bt.dias, llenado: bt.llenado, stop_gap: bt.stop_gap } });
+      p_params: bt.estrategia === "vwap_ema"
+        ? { intervalo: bt.intervalo, salida: bt.salida, objetivo: bt.objetivo, stop: bt.stop_v, max_ops: bt.max_ops, direccion: bt.direccion, dias: bt.dias }
+        : { minutos: bt.minutos, direccion: bt.direccion, stop: bt.stop, objetivo: bt.objetivo, dias: bt.dias, llenado: bt.llenado, stop_gap: bt.stop_gap } });
   } catch (e) { caja.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
   ultimoReporte = j; tablaDias = { filtro: "", col: 0, asc: false, mostrar: 25 };
   const k = j.kpis || [];
   caja.innerHTML = `
     <div class="nota" style="margin:2px 2px 8px">${esc(j.titulo)} · ${esc(nombreCorto(j.simbolo))} · ${esc(j.desde ?? "")} → ${esc(j.hasta ?? "")} · ${j.n} operaciones</div>
+    ${j.vwap_sin_volumen ? `<div class="card nota" style="border-color:var(--warn)">ℹ️ Este activo no trae volumen en Yahoo (forex) o le falta en parte de las velas (BTC): en esos días el VWAP se reemplaza por el promedio del precio típico de la sesión.</div>` : ""}
     ${j.n > 0 && j.n < 100 ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Muestra pequeña: ${j.n} operaciones. Con pocas operaciones el resultado puede ser suerte.</div>` : ""}
     <div class="kpis">${k.map((x) => `<div class="k"><div class="v" style="font-size:22px">${x.pct != null ? Number(x.pct).toFixed(1) + "%" : esc(x.valor ?? "—")}</div><div class="l">${esc(x.label)}</div></div>`).join("")}</div>
     ${j.curva?.length ? `<div class="card"><h3>Curva de resultados (R acumulado)</h3><div id="bt-curva" style="height:220px;margin:0 -6px"></div></div>` : ""}
