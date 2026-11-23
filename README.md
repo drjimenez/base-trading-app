@@ -7,6 +7,7 @@ Web app instalable que consulta la base de datos de trading en Supabase, con rep
 - **Mercados:** precios, gráfico de velas con medias 50/200 y probabilidades históricas.
 - **Consultas:** caja de chat con el Analista IA (Agente 5). Cada pregunta se responde con SQL de solo lectura sobre la base, gráfico y resumen, y queda guardada como tarjeta que se puede volver a ejecutar con datos nuevos.
 - **Reporte Balance inicial (IB):** cuánto tiempo se queda el precio dentro del rango de la primera hora (0–60, 60–120, 120+ min; desglose 0–30 / 30–60 con velas de 5 min) y qué proyección alcanza al romper (múltiplos del rango IB).
+- **Backtest de estrategias** (Reportes → Herramientas): ORB, ruptura del IB, gap fill y **cruce VWAP / EMA 9** (velas de 5/15/30 min, salida por objetivo en R o por cruce contrario, stop swing de 3 velas o 1.5× ATR, máximo de operaciones por día). En forex, sin volumen en Yahoo, el VWAP se reemplaza por el promedio del precio típico y la app lo avisa.
 - **Agentes:** los 3 agentes núcleo de la base (reemplaza a "Estado").
   - *Resumen:* reporte del mercado del Analista, semáforo de datos, estado de cada agente, retorno a 20 días y señales de confianza alta.
   - *Activos:* calidad de datos por activo; al tocar uno se abre su reporte completo (técnico, probabilidades por casos parecidos, setups intradía, plan del Estratega, estrategias sugeridas e incidencias).
