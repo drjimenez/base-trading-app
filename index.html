@@ -215,7 +215,7 @@
     <button data-tab="reportes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Reportes</button>
     <button data-tab="consultas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg>Consultas</button>
     <button data-tab="mercados"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>Mercados</button>
-    <button data-tab="estado"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg>Estado</button>
+    <button data-tab="agentes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6M2 12v3M22 12v3"/></svg>Agentes</button>
   </nav>
 </div>
 
@@ -300,17 +300,18 @@ $("#f-login").addEventListener("submit", async (ev) => {
 // ===================== NAVEGACIÓN =====================
 document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => irTab(b.dataset.tab)));
 $("#b-atras").addEventListener("click", () => irTab(estado.volverA || "mercados"));
-$("#b-refrescar").addEventListener("click", () => estado.detalle ? verDetalle(estado.detalle) : irTab(estado.tab));
+$("#b-refrescar").addEventListener("click", () => estado.detalle ? verDetalle(estado.detalle) : estado.agDet ? verAgActivo(estado.agDet) : irTab(estado.tab));
 
 function irTab(tab) {
   clearInterval(estado.timer);
-  estado.tab = tab; estado.detalle = null; limpiarGraficos();
+  if (tab === "estado") tab = "agentes";
+  estado.tab = tab; estado.detalle = null; estado.agDet = null; limpiarGraficos();
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   $("#b-atras").classList.add("oculto");
   window.scrollTo(0, 0);
   document.body.classList.toggle("con-chat", tab === "consultas");
   $("#composer")?.remove();
-  ({ enjuego: verEnJuego, reportes: verReportes, mercados: verMercados, senales: verSenales, estado: verEstado, consultas: verConsultas })[tab]();
+  ({ enjuego: verEnJuego, reportes: verReportes, mercados: verMercados, senales: verSenales, agentes: verAgentes, consultas: verConsultas })[tab]();
 }
 
 // ===================== MERCADOS =====================
@@ -1307,13 +1308,176 @@ async function verSenales() {
     <p class="nota" style="margin-top:10px">“pts” = diferencia frente a la frecuencia normal del evento. Calculado el ${esc(filas[0].fecha)}.</p>`;
 }
 
-// ===================== ESTADO =====================
-async function verEstado() {
-  $("#titulo").textContent = "Estado";
+// ===================== AGENTES (Administrador · Analista · Backtester) =====================
+const SETUPS = {
+  occ_verde: "1ª hora verde → el día cierra verde", occ_roja: "1ª hora roja → el día cierra rojo",
+  pdh: "Rompe solo el máximo previo y cierra arriba", pdl: "Rompe solo el mínimo previo y cierra abajo",
+  gap_alza: "Gap al alza: llena 100 %", gap_baja: "Gap a la baja: llena 100 %",
+  orb_arriba: "ORB 15: rompe arriba y cierra sobre el rango", orb_abajo: "ORB 15: rompe abajo y cierra bajo el rango",
+  rech_min: "IB: mínimo primero → rompe primero el máximo", rech_max: "IB: máximo primero → rompe primero el mínimo",
+  ib_arriba: "IB: rompe arriba → cierra sobre el IB", ib_abajo: "IB: rompe abajo → cierra bajo el IB",
+};
+const SEMAFORO = { verde: "var(--up)", amarillo: "var(--warn)", rojo: "var(--down)" };
+const ESTADO_EST = { Recomendable: "up", Prometedora: "", "Sin ventaja": "down", "Muestra insuficiente": "" };
+const INCID = { ohlc_invalido: "OHLC inválido", atipico: "Movimiento atípico", hueco: "Día faltante", dato_viejo: "Dato atrasado",
+  velas_atrasadas: "Velas de 5 min atrasadas", dia_no_habil: "Vela de fin de semana" };
+const fh = (t) => t ? new Date(t).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" }) : "—";
+const pctF = (x, d = 1) => x == null ? "—" : fmtPct(Number(x) * 100, d);
+const estadoTxt = (e) => {
+  if (!e) return "";
+  return e.split("+").map((p) => {
+    let m;
+    if (p === "rsi_<30") return "RSI < 30";
+    if (p === "rsi_>70") return "RSI > 70";
+    if ((m = p.match(/^rsi_(\d+)_(\d+)$/))) return `RSI ${m[1]}–${m[2]}`;
+    if ((m = p.match(/^tend_(\w+)$/))) return `tendencia ${m[1]}`;
+    if ((m = p.match(/^racha_([+-]?)(\d)$/))) {
+      const n = m[2] === "3" ? "3 o más días" : m[2] === "1" ? "1 día" : `${m[2]} días`;
+      return m[2] === "0" ? "sin racha" : `${n} ${m[1] === "-" ? "a la baja" : "al alza"}`;
+    }
+    return p;
+  }).join(" + ");
+};
+const puntoSem = (s) => `<span class="dot" style="background:${SEMAFORO[s] || "var(--mut)"}"></span>`;
+const tagEst = (e) => `<span class="tag ${ESTADO_EST[e] ?? ""}" ${e === "Prometedora" ? 'style="color:var(--warn);background:rgba(245,158,11,.15)"' : ""}>${esc(e)}</span>`;
+
+async function verAgentes() {
+  $("#titulo").textContent = "Agentes";
+  const c = $("#contenido");
+  estado.ag = estado.ag || { vista: "resumen", filtro: "todas" };
+  const vistas = { resumen: "Resumen", activos: "Activos", estrategias: "Estrategias", sistema: "Sistema" };
+  c.innerHTML = `<div class="seg" id="ag-seg">${Object.entries(vistas).map(([k, v]) =>
+    `<button data-v="${k}" class="${estado.ag.vista === k ? "on" : ""}">${v}</button>`).join("")}</div><div id="ag-cuerpo"><div class="vacio">Cargando…</div></div>`;
+  c.querySelectorAll("#ag-seg button").forEach((b) => b.addEventListener("click", () => { estado.ag.vista = b.dataset.v; verAgentes(); }));
+  const el = $("#ag-cuerpo");
+  try {
+    if (estado.ag.vista === "estrategias") return pintarAgEstrategias(el, await rpc("app_estrategias"));
+    if (estado.ag.vista === "sistema") return verEstado(el);
+    const d = await rpc("app_agentes");
+    if (estado.ag.vista === "activos") return pintarAgActivos(el, d);
+    pintarAgResumen(el, d);
+  } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.message || e)}</div>`; }
+}
+
+function pintarAgResumen(el, d) {
+  const m = d.mercado?.datos || {};
+  const sem = m.semaforo || {};
+  const rk = m.ranking_20d || [];
+  const maxAbs = Math.max(0.0001, ...rk.map((r) => Math.abs(r.ret_20d || 0)));
+  const sen = (m.senales_destacadas || []).slice(0, 6);
+  el.innerHTML = `
+    <div class="ef resumen">
+      <h3>Resumen del mercado</h3>
+      <p>${esc(d.mercado?.resumen || "El Analista aún no ha generado el reporte del día.")}</p>
+      <div class="grid3">
+        <div class="kpi"><span>Datos en verde</span><b class="up">${sem.verde || 0}</b></div>
+        <div class="kpi"><span>Amarillo</span><b style="color:var(--warn)">${sem.amarillo || 0}</b></div>
+        <div class="kpi"><span>Rojo</span><b class="down">${sem.rojo || 0}</b></div>
+      </div>
+    </div>
+    <div class="card"><h3>Los 3 agentes</h3>${(d.agentes || []).map((a) => `
+      <div class="prob"><b>${esc(a.nombre)}</b><b class="${a.estado === "ok" ? "up" : a.estado === "error" ? "down" : "mut"}" ${a.estado === "advertencia" ? 'style="color:var(--warn)"' : ""}>${esc(a.estado || "sin correr")}</b>
+      <span class="nota" style="grid-column:1/-1">${esc(a.mensaje || "")}</span>
+      <span class="nota" style="grid-column:1/-1">Última corrida ${fh(a.ultima_corrida)} · ${esc(a.horario || "")}</span></div>`).join("")}</div>
+    ${rk.length ? `<div class="card"><h3>Retorno a 20 días</h3>${rk.map((r) => `
+      <div class="hbar" data-sim="${esc(r.simbolo)}" style="cursor:pointer"><span class="lbl">${esc(nombreCorto(r.simbolo))}</span>
+        <span class="t"><i style="width:${(Math.abs(r.ret_20d || 0) / maxAbs * 100).toFixed(1)}%;background:${(r.ret_20d || 0) >= 0 ? "var(--up)" : "var(--down)"}"></i></span>
+        <span class="v ${clase(r.ret_20d)}">${pctF(r.ret_20d)}</span></div>`).join("")}
+      <p class="nota" style="margin:8px 0 0">Toca un activo para ver su reporte.</p></div>` : ""}
+    ${sen.length ? `<div class="card"><h3>Señales de confianza alta</h3>${sen.map((s) => `
+      <div class="prob"><span><b>${esc(nombreCorto(s.simbolo))}</b> · ${esc(estadoTxt(s.estado))} · ${s.horizonte} d</span>
+        <b class="${s.ventaja >= 0 ? "up" : "down"}">${(s.prob * 100).toFixed(0)}%</b>
+        <div class="barra"><i style="width:${(s.prob * 100).toFixed(1)}%"></i></div>
+        <span class="nota" style="grid-column:1/-1">Sube el ${(s.prob * 100).toFixed(0)}% de las veces vs ${(s.base * 100).toFixed(0)}% normal (${s.n} casos)</span></div>`).join("")}</div>` : ""}
+    <p class="nota">Reporte del ${esc(d.mercado?.fecha || "—")}. Probabilidades históricas, no garantías.</p>`;
+  el.querySelectorAll("[data-sim]").forEach((x) => x.addEventListener("click", () => verAgActivo(x.dataset.sim)));
+}
+
+function pintarAgActivos(el, d) {
+  const rk = Object.fromEntries((d.mercado?.datos?.ranking_20d || []).map((r) => [r.simbolo, r]));
+  el.innerHTML = `<div class="lista">${(d.datos || []).map((a) => {
+    const r = rk[a.simbolo] || {};
+    return `<div class="fila" data-sim="${esc(a.simbolo)}">${puntoSem(a.semaforo)}
+      <div><div class="sim">${esc(nombreCorto(a.simbolo))}</div>
+      <div class="nom">Tendencia ${esc(r.tendencia || "—")} · RSI ${r.rsi ?? "—"}${a.incidencias ? ` · ${a.incidencias} incidencia(s)` : ""}</div></div>
+      <div class="der"><span class="pill ${(r.ret_20d || 0) >= 0 ? "up" : "down"}">${pctF(r.ret_20d)}</span><div class="nota">20 días</div></div></div>`;
+  }).join("")}</div>
+  <p class="nota" style="margin-top:10px">El punto indica la calidad de los datos (Administrador). Toca un activo para ver el reporte del Analista y las estrategias del Backtester.</p>`;
+  el.querySelectorAll("[data-sim]").forEach((x) => x.addEventListener("click", () => verAgActivo(x.dataset.sim)));
+}
+
+async function verAgActivo(sim) {
+  estado.agDet = sim; estado.volverA = "agentes";
+  $("#b-atras").classList.remove("oculto");
+  $("#titulo").textContent = nombreCorto(sim);
   const c = $("#contenido");
   c.innerHTML = `<div class="vacio">Cargando…</div>`;
+  window.scrollTo(0, 0);
+  let p;
+  try { p = await rpc("app_reporte_agente", { p_simbolo: sim }); } catch (e) { return mostrarError(e); }
+  const rep = p.reporte?.datos || {};
+  const pr = rep.precio || {}, t = rep.tecnico || {}, ed = p.estado_datos || {};
+  const plan = rep.plan_sesion;
+  c.innerHTML = `
+    <div class="ef resumen">
+      <div class="ej-fila"><div><div class="big">${fmtPx(sim, pr.cierre)}</div><div class="nota">Cierre ${esc(rep.fecha || "—")}</div></div>
+        <div><span class="pill ${clase(pr.cambio_1d)}">${pctF(pr.cambio_1d)}</span><div class="nota">día</div></div></div>
+      <p style="margin-top:10px">${esc(p.reporte?.resumen || "Sin reporte todavía.")}</p>
+    </div>
+    <div class="card"><h3>Técnico</h3><div class="grid3">
+      <div class="kpi"><span>Tendencia</span><b>${esc(t.tendencia || "—")}</b></div>
+      <div class="kpi"><span>RSI 14</span><b class="${t.rsi_14 < 30 ? "down" : t.rsi_14 > 70 ? "up" : ""}">${t.rsi_14 != null ? Number(t.rsi_14).toFixed(0) : "—"}</b></div>
+      <div class="kpi"><span>Volatilidad</span><b>${t.vol_20 != null ? (t.vol_20 * 100).toFixed(0) + "%" : "—"}</b></div>
+      <div class="kpi"><span>5 días</span><b class="${clase(pr.ret_5d)}">${pctF(pr.ret_5d)}</b></div>
+      <div class="kpi"><span>20 días</span><b class="${clase(pr.ret_20d)}">${pctF(pr.ret_20d)}</b></div>
+      <div class="kpi"><span>Vs máx. 52 sem.</span><b class="${clase(t.dist_max_52s)}">${pctF(t.dist_max_52s)}</b></div>
+    </div></div>
+    ${(rep.senales || []).length ? `<div class="card"><h3>Probabilidades (casos parecidos)</h3>${rep.senales.map((s) => `
+      <div class="prob"><span>${esc(estadoTxt(s.estado))} · sube a ${s.horizonte} d</span>
+        <b class="${s.ventaja >= 0 ? "up" : "down"}">${(s.prob * 100).toFixed(0)}%</b>
+        <div class="barra"><i style="width:${(s.prob * 100).toFixed(1)}%"></i></div>
+        <span class="nota" style="grid-column:1/-1">Normal ${(s.base * 100).toFixed(0)}% · ventaja ${s.ventaja >= 0 ? "+" : ""}${(s.ventaja * 100).toFixed(1)} pts · ${s.n} casos · confianza ${esc(s.confianza)}${s.ic90 ? ` · IC 90% ${(s.ic90[0] * 100).toFixed(0)}–${(s.ic90[1] * 100).toFixed(0)}%` : ""}</span></div>`).join("")}</div>` : ""}
+    ${(rep.setups || []).length ? `<div class="card"><h3>Setups intradía más probables</h3>${rep.setups.map((s) => `
+      <div class="hbar" style="grid-template-columns:1fr 70px 54px"><span class="lbl" style="white-space:normal">${esc(SETUPS[s.setup] || s.setup)}</span>
+        <span class="t"><i style="width:${Number(s.prob).toFixed(1)}%"></i></span><span class="v">${Number(s.prob).toFixed(0)}%</span></div>`).join("")}
+      <p class="nota" style="margin:6px 0 0">Últimos 2 años; n ≥ 30 casos.</p></div>` : ""}
+    ${plan ? `<div class="card"><h3>Plan del Estratega · ${esc(plan.sesion)} ${esc(plan.fecha)}</h3>
+      <p class="nota" style="margin:0 0 6px">Sesgo <b>${esc(plan.bias)}</b> (${plan.prob_alza != null ? (Number(plan.prob_alza) <= 1 ? Number(plan.prob_alza) * 100 : Number(plan.prob_alza)).toFixed(0) + "% al alza" : "—"}) · ${plan.habilitado ? '<span class="up">validado</span>' : "en observación"}</p>
+      <p class="nota" style="margin:0">${esc(plan.resumen || "")}</p></div>` : ""}
+    <div class="card"><h3>Estrategias sugeridas (Backtester)</h3>${(p.estrategias || []).map((e) => `
+      <div class="setup"><div><b>${e.puesto}. ${esc(e.nombre)}</b>${tagEst(e.estado)}<div class="nota">${esc(e.variante || "")} · ${esc(e.temporalidad || "")} · ${esc(e.fuente)}</div></div>
+        <div class="pct ${clase(e.oos_r)}" style="font-size:18px">${e.oos_r != null ? (e.oos_r >= 0 ? "+" : "") + Number(e.oos_r).toFixed(1) + " R" : "—"}<div class="nota" style="font-weight:400">fuera de muestra</div></div>
+        <div class="nota" style="grid-column:1/-1">${e.n} operaciones · ${Number(e.acierto).toFixed(0)}% acierto · ${Number(e.r_total).toFixed(1)} R total${e.pf ? ` · factor ${e.pf}` : ""}${e.dd ? ` · DD ${Number(e.dd).toFixed(1)} R` : ""}${e.robustez != null ? ` · robustez ${Number(e.robustez).toFixed(0)}%` : ""}</div></div>`).join("") || '<div class="nota">El Backtester aún no ha corrido para este activo.</div>'}
+      <p class="nota" style="margin:8px 0 0">Walk-forward: variante elegida con el 70 % inicial y juzgada con el 30 % final. Sin comisiones ni deslizamiento.</p></div>
+    <div class="card"><h3>${puntoSem(ed.semaforo)} Calidad de datos</h3>
+      <p class="nota" style="margin:0 0 6px">Último diario ${esc(ed.ultimo_diario || "—")} · atraso ${ed.dias_atraso ?? "—"} día(s) · última vela 5 min ${fh(ed.ultima_vela_5m)}</p>
+      ${(p.incidencias_abiertas || []).map((i) => `<div class="nota">• ${esc(i.fecha)} — ${esc(INCID[i.tipo] || i.tipo)}: ${esc(i.detalle)}</div>`).join("") || '<div class="nota">Sin incidencias abiertas.</div>'}</div>`;
+}
+
+function pintarAgEstrategias(el, filas) {
+  const f = estado.ag.filtro;
+  const porActivo = {};
+  filas.forEach((x) => (porActivo[x.simbolo] = porActivo[x.simbolo] || []).push(x));
+  const filtros = { todas: "Todas", Recomendable: "Recomendables", Prometedora: "Prometedoras" };
+  const lista = Object.entries(porActivo).filter(([, xs]) => f === "todas" || xs[0].estado === f);
+  el.innerHTML = `<div class="chips" id="ag-chips">${Object.entries(filtros).map(([k, v]) => `<button class="chip ${f === k ? "on" : ""}" data-f="${k}">${v}</button>`).join("")}</div>
+    ${lista.map(([sim, xs]) => `<details class="cq"><summary class="cq-cab" style="list-style:none;cursor:pointer">
+        <div style="flex:1"><b>${esc(nombreCorto(sim))} · ${esc(xs[0].nombre)}</b>${tagEst(xs[0].estado)}
+        <div class="nota">${esc(xs[0].variante || "")} · ${esc(xs[0].temporalidad || "")}</div></div>
+        <div class="der"><b class="${clase(xs[0].oos_r)}">${xs[0].oos_r != null ? (xs[0].oos_r >= 0 ? "+" : "") + Number(xs[0].oos_r).toFixed(1) + " R" : "—"}</b><div class="nota">${xs[0].oos_n ?? 0} ops fuera</div></div></summary>
+      <div class="cq-cuerpo">${xs.map((x) => `<p class="nota" style="margin:6px 0">${x.puesto}. ${esc(x.texto || "")}</p>`).join("")}
+        <button class="btn-ic" data-sim="${esc(sim)}" style="width:100%;margin-top:6px">Ver reporte completo</button></div></details>`).join("") || '<div class="vacio">No hay estrategias con este filtro.</div>'}
+    <p class="nota">Recomendable: ventaja dentro y fuera de muestra, factor ≥ 1.1, ≥ 100 operaciones (≥ 30 fuera de muestra) y robustez ≥ 40 %. Prometedora: ventaja con muestra corta o frágil. El Backtester corre los sábados.</p>`;
+  el.querySelectorAll("#ag-chips button").forEach((b) => b.addEventListener("click", () => { estado.ag.filtro = b.dataset.f; pintarAgEstrategias(el, filas); }));
+  el.querySelectorAll("button[data-sim]").forEach((b) => b.addEventListener("click", () => verAgActivo(b.dataset.sim)));
+}
+
+// ===================== ESTADO (vista "Sistema" de Agentes) =====================
+async function verEstado(c) {
+  c = c || $("#contenido");
+  c.innerHTML = `<div class="vacio">Cargando…</div>`;
   let e;
-  try { e = await rpc("app_estado"); } catch (err) { return mostrarError(err); }
+  try { e = await rpc("app_estado"); } catch (err) { c.innerHTML = `<div class="vacio">${esc(err.message || err)}</div>`; return; }
   const { data: { user } } = await db.auth.getUser();
   const fh = (t) => t ? new Date(t).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" }) : "—";
   c.innerHTML = `
@@ -1323,7 +1487,7 @@ async function verEstado() {
       <div class="kpi"><span>Incidencias</span><b class="${e.incidencias_abiertas ? "down" : "up"}">${e.incidencias_abiertas}</b></div>
     </div>
     <p class="nota" style="margin:10px 0 0">Último cierre diario: <b>${esc(e.ultima_fecha)}</b> · Último precio de 5 min: <b>${fh(e.ultimo_intradia)}</b></p></div>
-    <div class="card"><h3>Agentes</h3>${(e.agentes || []).map((a) => `
+    <div class="card"><h3>Bitácora de procesos</h3>${(e.agentes || []).map((a) => `
       <div class="prob"><b>${esc(a.agente)}</b><b class="${a.estado === "ok" ? "up" : a.estado === "error" ? "down" : ""}">${esc(a.estado)}</b>
       <span class="nota" style="grid-column:1/-1">${fh(a.inicio)} · ${a.filas ?? 0} filas</span></div>`).join("") || '<div class="nota">Sin ejecuciones.</div>'}</div>
     <div class="card"><div class="nota">Sesión: ${esc(user?.email)}</div>
