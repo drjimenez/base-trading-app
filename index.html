@@ -544,7 +544,8 @@ function pintarBacktest(el) {
   el.innerHTML = `<div class="card"><h3>Backtest de estrategias</h3>
       <div class="nota">${esc(nombreCorto(r.simbolo))} · periodo ${(PERIODOS.find(([, d]) => d === r.dias) || ["", ""])[0]} (cámbialos en Ajustes). Resultados en R: 1R = lo que arriesgas por operación.</div>
       <label class="et">Estrategia</label>${op("bt-est", [["orb", "ORB"], ["ib", "Ruptura IB"], ["gap", "Gap fill"], ["vwap_ema", "VWAP/EMA 9"]], bt.estrategia)}
-      ${ve ? `<label class="et">Velas</label>${op("bt-iv", [[5, "5 min"], [15, "15 min"], [30, "30 min"]], bt.intervalo)}` : ""}
+      ${ve ? `<label class="et">Velas</label>${op("bt-iv", [[1, "1 min"], [5, "5 min"], [15, "15 min"], [30, "30 min"]], bt.intervalo)}
+        <div class="nota" style="margin-top:4px">1 min solo funciona con velas de TradingView/FOREX.com cargadas en el Laboratorio; si existen, se usan en lugar de las de Yahoo.</div>` : ""}
       ${bt.estrategia === "orb" ? `<label class="et">Rango de apertura</label>${op("bt-min", [[5, "5 min"], [15, "15 min"], [30, "30 min"], [60, "60 min"]], bt.minutos)}` : ""}
       <label class="et">Dirección</label>${op("bt-dir", [["ambos", "Ambas"], ["largo", "Solo largos"], ["corto", "Solo cortos"]], bt.direccion)}
       ${ve ? `
@@ -587,7 +588,7 @@ async function ejecutarBacktest() {
   ultimoReporte = j; tablaDias = { filtro: "", col: 0, asc: false, mostrar: 25 };
   const k = j.kpis || [];
   caja.innerHTML = `
-    <div class="nota" style="margin:2px 2px 8px">${esc(j.titulo)} · ${esc(nombreCorto(j.simbolo))} · ${esc(j.desde ?? "")} → ${esc(j.hasta ?? "")} · ${j.n} operaciones</div>
+    <div class="nota" style="margin:2px 2px 8px">${esc(j.titulo)} · ${esc(nombreCorto(j.simbolo))} · ${esc(j.desde ?? "")} → ${esc(j.hasta ?? "")} · ${j.n} operaciones${j.fuente ? ` · velas: ${esc(j.fuente)}` : ""}</div>
     ${j.vwap_sin_volumen ? `<div class="card nota" style="border-color:var(--warn)">ℹ️ Este activo no trae volumen en Yahoo (forex) o le falta en parte de las velas (BTC): en esos días el VWAP se reemplaza por el promedio del precio típico de la sesión.</div>` : ""}
     ${j.n > 0 && j.n < 100 ? `<div class="card nota" style="border-color:var(--warn)">⚠️ Muestra pequeña: ${j.n} operaciones. Con pocas operaciones el resultado puede ser suerte.</div>` : ""}
     <div class="kpis">${k.map((x) => `<div class="k"><div class="v" style="font-size:22px">${x.pct != null ? Number(x.pct).toFixed(1) + "%" : esc(x.valor ?? "—")}</div><div class="l">${esc(x.label)}</div></div>`).join("")}</div>
