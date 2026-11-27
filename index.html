@@ -706,7 +706,7 @@ const pref = {
   guardar(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 let marcadores = pref.leer("marcadores", ["gap_fill", "vela_apertura", "balance_inicial", "ib_ruptura", "rango_previo"]);
-let favoritos = pref.leer("favoritos", ["SPY", "QQQ", "EURUSD=X", "MGC=F"]);
+let favoritos = pref.leer("favoritos", ["SPY", "^NDX", "EURUSD=X", "MGC=F"]).map((s) => (s === "QQQ" ? "^NDX" : s));
 let plantillas = pref.leer("plantillas", []);
 let ultimoReporte = null, tablaDias = { filtro: "", col: 0, asc: false, mostrar: 25 };
 
@@ -927,7 +927,7 @@ async function pintarLabReportes(el) {
   let d; try { d = await rpc("app_laboratorio"); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.message)}</div>`; return; }
   if (!d.filas?.length) { el.innerHTML = `<div class="vacio">El laboratorio todavía no tiene comparativas.</div>`; return; }
   const R = LAB.construirReportes(d.filas, d.embudo || [], d.horas || []);
-  el.innerHTML = R.map(LAB.efTarjeta).join("") + `<p class="nota">Compara ES y NQ (con datos de TradingView si los cargaste; si no, SPY×10 y QQQ×41). Se recalcula cada noche. Frecuencias históricas, no garantías.</p>`;
+  el.innerHTML = R.map(LAB.efTarjeta).join("") + `<p class="nota">Compara ES y NQ (con datos de TradingView si los cargaste; si no, SPY×10 y el Nasdaq 100). Se recalcula cada noche. Frecuencias históricas, no garantías.</p>`;
 }
 
 let labEj = { lista: [], ops: [], chart: null };
@@ -1048,7 +1048,7 @@ function pintarCalculadora(el) {
 const SUGERENCIAS = [
   "En los últimos 2 años, cuando SPY se queda dentro del IB 30, 60, 120 min o más, ¿qué proyección alcanza con más frecuencia al romper?",
   "Compara entre todos los activos el % de días que rompen el IB y la proyección media",
-  "¿Qué día de la semana NQ (QQQ) rompe el IB al alza con más frecuencia?",
+  "¿Qué día de la semana el Nasdaq 100 rompe el IB al alza con más frecuencia?",
   "Tamaño medio del IB en % por mes para EURUSD en el último año",
 ];
 const COLORES = ["#60a5fa", "#22c55e", "#f59e0b", "#a78bfa", "#ef4444", "#14b8a6"];
