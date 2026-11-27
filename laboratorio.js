@@ -645,15 +645,16 @@ const pl=(n,a,b)=>`${n} ${+n===1?a:b}`;
 const efR=v=>(v>=0?'+':'')+v.toFixed(1)+' R', efP=v=>Math.round(v)+'%';
 const efCorto={orb_ny:'ORB\nNueva York',orb_londres:'ORB\nLondres',tt_fractal:'TT Fractal',ema_cruce:'Cruce\nde EMAs',combo_vwap_rsi:'VWAP + EMA\n+ RSI',cisd_fvg:'CISD + FVG'};
 
-// filas: lab_clasificacion de cada activo con su referencia (ref = SPY/QQQ) · embudo: base CISD · horas: operaciones del #1 de cada referencia
+// filas: lab_clasificacion de cada activo con su referencia (ref = SPY/^NDX) · embudo: base CISD · horas: operaciones del #1 de cada referencia
 function construirReportes(filas, embudo, horas){
-  const nomRef=r=>r==='SPY'?'ES':r==='QQQ'?'NQ':r;
+  const esNq=r=>r==='QQQ'||r==='^NDX';
+  const nomRef=r=>r==='SPY'?'ES':esNq(r)?'NQ':r;
   // un conjunto de datos por referencia (prioridad TradingView)
   const porRef=new Map(); for(const f of filas){ const a=porRef.get(f.ref); if(!a || (f.fuente==='tradingview' && a.fuente!=='tradingview')) porRef.set(f.ref,{fuente:f.fuente,simbolo:f.simbolo}); }
-  const refs=[...porRef.keys()].sort((a,b)=>(a==='SPY'?0:a==='QQQ'?1:2)-(b==='SPY'?0:b==='QQQ'?1:2)).slice(0,2);
+  const refs=[...porRef.keys()].sort((a,b)=>(a==='SPY'?0:esNq(a)?1:2)-(b==='SPY'?0:esNq(b)?1:2)).slice(0,2);
   const F=filas.filter(f=>porRef.get(f.ref)?.simbolo===f.simbolo);
   horas=horas.filter(h=>porRef.get(h.ref)?.simbolo===h.simbolo); embudo=embudo.filter(h=>porRef.get(h.ref)?.simbolo===h.simbolo);
-  const datos=r=>{ const d=porRef.get(r); return d.fuente==='tradingview'? d.simbolo : `${d.simbolo}×${r==='SPY'?10:41}`; };
+  const datos=r=>{ const d=porRef.get(r); return d.fuente==='tradingview' || r==='^NDX' ? d.simbolo : `${d.simbolo}×${r==='SPY'?10:41}`; };
   const series=refs.map(r=>({ref:r,nombre:nomRef(r)}));
   const desde=F.reduce((a,f)=>!a||f.desde<a?f.desde:a,null), hasta=F.reduce((a,f)=>!a||f.hasta>a?f.hasta:a,null);
   const periodo=`${desde} a ${hasta}`, fuenteTxt=`fuente: laboratorio de estrategias (Agente 7) · datos ${refs.map(datos).join(' y ')}`;
